@@ -1,0 +1,17 @@
+.vscode/
+temp.py
+deploy.py
+snapTest.py
+**/.DS_Store
+.DS_Store
+node_modules
+build/
+types/
+cache/
+artifacts/
+typechain/
+flatten/
+bin/
+coverage*
+.env
+temp.txt
