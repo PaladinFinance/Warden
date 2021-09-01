@@ -7,4 +7,6 @@ interface IVotingEscrow {
     
     function balanceOf(address _account) external view returns (uint256);
 
+    function create_lock(uint256 _value, uint256 _unlock_time) external returns (uint256);
+
 }

@@ -10,6 +10,10 @@ Buyer can then pay to get a DelegationBoost from the delegator, for a given amou
 All fees paid to buy DelegationBoosts are paid in the votingEscrow underlying token (ex: for veCRV, fees paid in CRV)  
 Delegator can claim fees they earned through the purchases of DelegationBoosts they originated.
 
+
+Currently it only works with Delegation Boost made for CRV rewards on Curve.  
+The goal is to have a system that could later work on top of total votes delegation of veCRV (for Gauges votes & DAO votes).
+
 ## Dependencies & Installation
 
 
@@ -31,7 +35,8 @@ This will install `Hardhat`, `Ethers v5`, and all the hardhat plugins used in th
 ## Contracts
 
 
-See the `./contracts` directory.
+* [Warden](https://github.com/PaladinFinance/Warden/tree/main/contracts/Warden.sol) : Main contract
+* [WardenUtils](https://github.com/PaladinFinance/Warden/tree/main/contracts/WardenUtils.sol) : Contract to fetch & filter data from the Warden contract
 
 
 ## Tests

@@ -5,8 +5,6 @@ pragma solidity ^0.8.4;
 /** @title Custom Interface for Curve VotingEscrowDelegation contract  */
 interface IVotingEscrowDelegation {
 
-    function MIN_DELEGATION_TIME() external view returns(uint256);
-
     function isApprovedForAll(address owner, address operator) external view returns(bool);
 
     function ownerOf(uint256 tokenId) external view returns(address);
@@ -16,6 +14,8 @@ interface IVotingEscrowDelegation {
     function total_minted(address delegator) external view returns(uint256);
 
     function grey_list(address receiver, address delegator) external view returns(bool);
+
+    function setApprovalForAll(address _operator, bool _approved) external;
 
     function create_boost(
         address _delegator,
