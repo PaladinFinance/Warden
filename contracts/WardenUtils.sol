@@ -75,9 +75,9 @@ contract WardenUtils {
             uint256 cancelTime = delegationBoost.token_cancel_time(tokenId);
 
             if (cancelTime < currentTime) {
-                potentialBalance += uint256(
-                    -delegationBoost.token_boost(tokenId)
-                );
+                int256 boost = delegationBoost.token_boost(tokenId);
+                uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
+                potentialBalance += absolute_boost;
             }
         }
 

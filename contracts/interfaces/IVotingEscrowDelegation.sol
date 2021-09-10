@@ -37,7 +37,7 @@ interface IVotingEscrowDelegation {
 
     function cancel_boost(uint256 _token_id) external;
 
-    function batch_cancel_boosts(uint256[] memory _token_ids) external;
+    function batch_cancel_boosts(uint256[256] memory _token_ids) external;
 
     function adjusted_balance_of(address _account) external view returns(uint256);
 

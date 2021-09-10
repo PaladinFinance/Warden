@@ -20,6 +20,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     // Constants :
     uint256 public constant UNIT = 1e18;
     uint256 public constant MAX_PCT = 10000;
+    uint256 public constant WEEK = 7 * 86400;
 
     // Storage :
 
@@ -51,7 +52,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     uint256 public minPercRequired; //bps
 
     /** @notice Minimum delegation time, taken from veBoost contract */
-    uint256 public minDelegationTime = 7 * 1 days;
+    uint256 public minDelegationTime = 1 weeks;
 
     /** @notice Total number of offers in the array (useful for external contracts) */
     uint256 public offersIndex;
@@ -227,7 +228,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function estimateFees(
         address delegator,
         uint256 percent,
-        uint256 duration
+        uint256 duration //in weeks
     ) external view returns (uint256) {
         require(delegator != address(0), "Warden: Zero address");
         require(userIndex[delegator] != 0, "Warden: Not registered");
@@ -238,7 +239,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(percent <= MAX_PCT, "Warden: Percent over 100");
 
         // Get the duration in seconds, and check it's more than the minimum required
-        uint256 durationSeconds = duration * 1 days;
+        uint256 durationSeconds = duration * 1 weeks;
         require(
             durationSeconds >= minDelegationTime,
             "Warden: Duration too short"
@@ -264,8 +265,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @notice aaa
-     * @dev aaa
+     * @notice Buy a Delegation Boost for a Delegator Offer
+     * @dev If all parameters match the offer from the delegator, creates a Boost for the caller
      * @param delegator Address of the delegator for the Boost
      * @param receiver Address of the receiver of the Boost
      * @param percent Percent of the delegator balance to delegate
@@ -276,7 +277,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address delegator,
         address receiver,
         uint256 percent,
-        uint256 duration, //in days
+        uint256 duration, //in weeks
         uint256 maxFeeAmount
     ) external nonReentrant whenNotPaused {
         require(
@@ -292,8 +293,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(percent <= MAX_PCT, "Warden: Percent over 100");
 
         // Get the duration of the wanted Boost in seconds
+        uint256 boostDuration = duration * 1 weeks;
         require(
-            (duration * 1 days) >= minDelegationTime,
+            boostDuration >= minDelegationTime,
             "Warden: Duration too short"
         );
 
@@ -319,8 +321,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Calculate the price for the given duration, get the real amount of fees to pay,
         // and check the maxFeeAmount provided (and approved beforehand) is enough.
         // Calculated using the pricePerVote set by the delegator
-        uint256 priceForAmount = (toDelegateAmount * offer.pricePerVote) / UNIT;
-        uint256 realFeeAmount = priceForAmount * (duration * 1 days);
+        uint256 realFeeAmount = ((toDelegateAmount * offer.pricePerVote) / UNIT) * boostDuration;
         require(
             realFeeAmount <= maxFeeAmount,
             "Warden: Fees do not cover Boost duration"
@@ -330,14 +331,23 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         _pullFees(msg.sender, realFeeAmount, delegator);
 
         // Calcualte the expiry time for the Boost = now + duration
-        uint256 expiryTime = block.timestamp + (duration * 1 days);
+        uint256 expiryTime = ((block.timestamp + boostDuration) / WEEK) * WEEK;
+
+        // Hack needed because veBoost contract rounds down expire_time
+        // We don't want buyers to receive less than they pay for
+        // So an "extra" week is added if needed to get an expire_time covering the required duration
+        // But cancel_time will be set for the exact paid duration, so any "bonus days" received can be canceled
+        // if a new buyer wants to take the offer
+        expiryTime = (expiryTime < block.timestamp + boostDuration) ?
+            ((block.timestamp + boostDuration + WEEK) / WEEK) * WEEK :
+            expiryTime;
 
         // VotingEscrowDelegation needs the percent of available tokens for delegation when creating the boost, instead of
         // the percent of the users balance. We calculate this percent representing the amount of tokens wanted by the buyer
-        uint256 boostPercent = (toDelegateAmount * MAX_PCT) / (delegatorBalance - delegationBoost.delegated_boost(delegator));
+        uint256 boostPercent = (toDelegateAmount * MAX_PCT) / 
+            (delegatorBalance - delegationBoost.delegated_boost(delegator));
 
         // Get the id (depending on the delegator) for the new Boost
-        // See if we could check for past used token for same delegator -> receiver couple to reuse (no minting needed)
         uint256 newId = delegationBoost.total_minted(delegator);
 
         // Creates the DelegationBoost
@@ -345,7 +355,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             delegator,
             receiver,
             int256(boostPercent),
-            expiryTime,
+            (block.timestamp + boostDuration), // cancelTime, stays current timestamp + paid duration
             expiryTime,
             newId
         );
@@ -379,10 +389,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function cancelDelegationBoost(uint256 tokenId) external whenNotPaused {
         address tokenOwner = delegationBoost.ownerOf(tokenId);
-        // If the caller own the token, or this contract is operator for the owner
+        // If the caller own the token, and this contract is operator for the owner
         // we try to burn the token directly
         if (
-            msg.sender == tokenOwner ||
+            msg.sender == tokenOwner &&
             delegationBoost.isApprovedForAll(tokenOwner, address(this))
         ) {
             delegationBoost.burn(tokenId);
@@ -395,7 +405,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address delegator = _getTokenDelegator(tokenId);
         if (
             delegationBoost.token_cancel_time(tokenId) < currentTime &&
-            (msg.sender == delegator ||
+            (msg.sender == delegator &&
                 delegationBoost.isApprovedForAll(delegator, address(this)))
         ) {
             delegationBoost.cancel_boost(tokenId);
@@ -444,7 +454,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function claim(uint256 amount) external whenNotPaused nonReentrant {
         require(amount <= earnedFees[msg.sender], "Warden: Amount too high");
-        _claim(msg.sender, earnedFees[msg.sender]);
+        _claim(msg.sender, amount);
     }
 
     function _pullFees(
@@ -472,8 +482,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 balance = votingEscrow.balanceOf(delegator);
 
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
-        uint256 blockedBalance = (balance * (MAX_PCT - delegatorMaxPerc)) /
-            MAX_PCT;
+        uint256 blockedBalance = (balance * (MAX_PCT - delegatorMaxPerc)) / MAX_PCT;
 
         // Available Balance to delegate = VotingEscrow Balance - Delegated Balance - Blocked Balance
         uint256 availableBalance = balance - delegationBoost.delegated_boost(delegator) - blockedBalance;
@@ -483,7 +492,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 potentialBalance = availableBalance;
 
         uint256 nbTokens = delegationBoost.total_minted(delegator);
-        uint256[] memory toCancel = new uint256[](nbTokens);
+        uint256[256] memory toCancel;
         uint256 nbToCancel = 0;
 
         // Loop over the delegator current boosts to find expired ones
@@ -493,10 +502,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
                 i
             );
 
-            if (delegationBoost.token_cancel_time(tokenId) < block.timestamp) {
-                potentialBalance += uint256(
-                    -delegationBoost.token_boost(tokenId)
-                );
+            if (delegationBoost.token_cancel_time(tokenId) <= block.timestamp && delegationBoost.token_cancel_time(tokenId) != 0) {
+                int256 boost = delegationBoost.token_boost(tokenId);
+                uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
+                potentialBalance += absolute_boost;
                 toCancel[nbToCancel] = tokenId;
                 nbToCancel++;
             }
@@ -517,7 +526,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Delegator does not have active Boosts currently
         if (nbTokens == 0) return;
 
-        uint256[] memory toCancel = new uint256[](nbTokens);
+        uint256[256] memory toCancel;
         uint256 nbToCancel = 0;
         uint256 currentTime = block.timestamp;
 
@@ -529,7 +538,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             );
             uint256 cancelTime = delegationBoost.token_cancel_time(tokenId);
 
-            if (cancelTime < currentTime) {
+            if (cancelTime <= currentTime && cancelTime != 0) {
                 toCancel[nbToCancel] = tokenId;
                 nbToCancel++;
             }
