@@ -80,7 +80,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 tokenId,
         uint256 percent, //bps
         uint256 price,
-        uint256 feeAmount,
+        uint256 paidFeeAmount,
         uint256 expiryTime
     );
 
@@ -374,7 +374,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             newTokenId,
             percent,
             offer.pricePerVote,
-            maxFeeAmount,
+            realFeeAmount,
             expiryTime
         );
     }

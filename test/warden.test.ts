@@ -483,7 +483,11 @@ describe('Warden contract tests', () => {
 
         it(' should create a Boost from the delegator to the caller', async () => {
 
+            const old_balance = await CRV.balanceOf(receiver.address)
+
             const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount)
+
+            const new_balance = await CRV.balanceOf(receiver.address)
 
             const token_id = await delegationBoost.get_token_id(
                 delegator.address,
@@ -496,6 +500,8 @@ describe('Warden contract tests', () => {
             const boost_expire_time = await delegationBoost.token_expiry(token_id)
             const boost_cancel_time = await delegationBoost.token_cancel_time(token_id)
 
+            const paidFees = old_balance.sub(new_balance)
+
             await expect(buy_tx)
                 .to.emit(warden, 'BoostPurchase')
                 .withArgs(
@@ -504,9 +510,11 @@ describe('Warden contract tests', () => {
                     token_id,
                     buy_percent,
                     price_per_vote,
-                    fee_amount,
+                    paidFees,
                     boost_expire_time
                 );
+
+            expect(paidFees).to.be.lt(fee_amount)
 
             expect(boost_amount).not.to.be.eq(0)
             expect(boost_expire_time).to.be.gte(tx_timestamp + (duration * one_week)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
