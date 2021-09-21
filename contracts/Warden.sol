@@ -44,9 +44,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     IVotingEscrowDelegation public delegationBoost;
 
     /** @notice ratio of fees to be set as Reserve */
-    uint256 public feeRatio; //bps
+    uint256 public feeReserveRatio; //bps
     /** @notice Total Amount in the Reserve */
     uint256 public reserveAmount;
+    /** @notice Address allowed to withdraw from the Reserve */
+    address public reserveManager;
 
     /** @notice Min Percent of delegator votes to buy required to purchase a Delegation Boost */
     uint256 public minPercRequired; //bps
@@ -86,29 +88,34 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     event Claim(address indexed user, uint256 amount);
 
+    modifier onlyAllowed(){
+        require(msg.sender == reserveManager || msg.sender == owner(), "Warden: call not allowed");
+        _;
+    }
+
     // Constructor :
     /**
      * @dev Creates the contract, set the given base parameters
      * @param _feeToken address of the token used to pay fees
      * @param _votingEscrow address of the voting token to delegate
      * @param _delegationBoost address of the contract handling delegation
-     * @param _feeRatio Percent of fees to be set as Reserve (bps)
+     * @param _feeReserveRatio Percent of fees to be set as Reserve (bps)
      * @param _minPercRequired Minimum percent of user
      */
     constructor(
         address _feeToken,
         address _votingEscrow,
         address _delegationBoost,
-        uint256 _feeRatio, //bps
+        uint256 _feeReserveRatio, //bps
         uint256 _minPercRequired //bps
     ) {
         feeToken = IERC20(_feeToken);
         votingEscrow = IVotingEscrow(_votingEscrow);
         delegationBoost = IVotingEscrowDelegation(_delegationBoost);
 
-        require(_feeRatio <= 5000);
+        require(_feeReserveRatio <= 5000);
         require(_minPercRequired > 0 && _minPercRequired <= 10000);
-        feeRatio = _feeRatio;
+        feeReserveRatio = _feeReserveRatio;
         minPercRequired = _minPercRequired;
 
         // fill index 0 in the offers array
@@ -466,8 +473,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         feeToken.safeTransferFrom(buyer, address(this), amount);
 
         // Split fees between Boost offerer & Reserve
-        earnedFees[seller] += (amount * (MAX_PCT - feeRatio)) / MAX_PCT;
-        reserveAmount += (amount * feeRatio) / MAX_PCT;
+        earnedFees[seller] += (amount * (MAX_PCT - feeReserveRatio)) / MAX_PCT;
+        reserveAmount += (amount * feeReserveRatio) / MAX_PCT;
     }
 
     function _canDelegate(
@@ -595,11 +602,19 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @notice Updates the ratio of Fees set for the Reserve
-     * @param newFeeRatio New ratio
+     * @param newFeeReserveRatio New ratio
      */
-    function setFeeRatio(uint256 newFeeRatio) external onlyOwner {
-        require(newFeeRatio <= 5000);
-        feeRatio = newFeeRatio;
+    function setFeeReserveRatio(uint256 newFeeReserveRatio) external onlyOwner {
+        require(newFeeReserveRatio <= 5000);
+        feeReserveRatio = newFeeReserveRatio;
+    }
+
+    /**
+     * @notice Updates the Reserve Manager
+     * @param newReserveManager New Reserve Manager address
+     */
+    function setReserveManager(address newReserveManager) external onlyOwner {
+        reserveManager = newReserveManager;
     }
 
     /**
@@ -617,18 +632,23 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
-     * @dev Withdraw either a lost ERC20 token sent to the contract,
-     * or part of the contract Reserve (if token is the feeToken)
+     * @dev Withdraw either a lost ERC20 token sent to the contract (expect the feeToken)
      * @param token ERC20 token to withdraw
      * @param amount Amount to transfer
      */
     function withdrawERC20(address token, uint256 amount) external onlyOwner {
-        if (token == address(feeToken)) {
-            require(amount <= reserveAmount, "Warden: Reserve too low");
-            reserveAmount = reserveAmount - amount;
-            feeToken.safeTransfer(owner(), amount);
-        } else {
-            IERC20(token).safeTransfer(owner(), amount);
-        }
+        require(token != address(feeToken), "Warden: cannot withdraw from Reserve");
+        IERC20(token).safeTransfer(owner(), amount);
+    }
+
+    function depositToReserve(address from, uint256 amount) external onlyAllowed {
+        reserveAmount = reserveAmount + amount;
+        feeToken.safeTransferFrom(from, address(this), amount);
+    }
+
+    function withdrawFromReserve(uint256 amount) external onlyAllowed {
+        require(amount <= reserveAmount, "Warden: Reserve too low");
+        reserveAmount = reserveAmount - amount;
+        feeToken.safeTransfer(reserveManager, amount);
     }
 }

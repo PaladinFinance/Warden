@@ -36,6 +36,7 @@ let wardenFactory: ContractFactory
 
 describe('Warden contract tests', () => {
     let admin: SignerWithAddress
+    let reserveManager: SignerWithAddress
     let delegator: SignerWithAddress
     let receiver: SignerWithAddress
     let externalUser: SignerWithAddress
@@ -49,7 +50,7 @@ describe('Warden contract tests', () => {
     const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
 
     before(async () => {
-        [admin, delegator, receiver, externalUser] = await ethers.getSigners();
+        [admin, reserveManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
@@ -94,16 +95,18 @@ describe('Warden contract tests', () => {
         const warden_feeToken = await warden.feeToken();
         const warden_votingEscrow = await warden.votingEscrow();
         const warden_delegationBoost = await warden.delegationBoost();
-        const warden_feeRatio = await warden.feeRatio();
+        const warden_feeReserveRatio = await warden.feeReserveRatio();
         const warden_minPercRequired = await warden.minPercRequired();
         const warden_reserveAmount = await warden.reserveAmount();
+        const warden_reserveManager = await warden.reserveManager();
 
         expect(warden_feeToken).to.be.eq(CRV.address);
         expect(warden_votingEscrow).to.be.eq(veCRV.address);
         expect(warden_delegationBoost).to.be.eq(delegationBoost.address);
-        expect(warden_feeRatio).to.be.eq(500);
+        expect(warden_feeReserveRatio).to.be.eq(500);
         expect(warden_minPercRequired).to.be.eq(1000);
         expect(warden_reserveAmount).to.be.eq(0);
+        expect(warden_reserveManager).to.be.eq(ethers.constants.AddressZero);
 
         // Since constructor created an ampty BoostOffer at index 0
         // to use index 0 as unregistered users in the userIndex mapping
@@ -960,16 +963,16 @@ describe('Warden contract tests', () => {
 
             it(' should allow admin to update the parameter', async () => {
 
-                await warden.connect(admin).setFeeRatio(3000)
+                await warden.connect(admin).setFeeReserveRatio(3000)
 
-                expect(await warden.feeRatio()).to.be.eq(3000)
+                expect(await warden.feeReserveRatio()).to.be.eq(3000)
 
             });
 
             it(' should fail if parameter is invalid', async () => {
 
                 await expect(
-                    warden.connect(admin).setFeeRatio(10000)
+                    warden.connect(admin).setFeeReserveRatio(10000)
                 ).to.be.reverted
 
             });
@@ -977,7 +980,7 @@ describe('Warden contract tests', () => {
             it(' should block non-admin caller', async () => {
 
                 await expect(
-                    warden.connect(externalUser).setFeeRatio(3000)
+                    warden.connect(externalUser).setFeeReserveRatio(3000)
                 ).to.be.reverted
 
             });
@@ -1014,7 +1017,7 @@ describe('Warden contract tests', () => {
 
         });
 
-        describe('setFeeRatio', async () => {
+        describe('setFeeReserveRatio', async () => {
 
             it(' should allow admin to update the parameter', async () => {
 
@@ -1040,6 +1043,26 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(externalUser).setMinPercRequired(5000)
+                ).to.be.reverted
+
+            });
+
+        });
+
+        describe('setReserveManager', async () => {
+
+            it(' should allow admin to update the parameter', async () => {
+
+                await warden.connect(admin).setReserveManager(reserveManager.address)
+
+                expect(await warden.reserveManager()).to.be.eq(reserveManager.address)
+
+            });
+
+            it(' should block non-admin caller', async () => {
+
+                await expect(
+                    warden.connect(externalUser).setReserveManager(externalUser.address)
                 ).to.be.reverted
 
             });
@@ -1073,7 +1096,7 @@ describe('Warden contract tests', () => {
 
             });
 
-            it(' should allow to withdraw from reserve', async () => {
+            it(' should not allow to withdraw from the reserve', async () => {
 
                 //create a boost
                 await CRV.connect(receiver).approve(warden.address, fee_amount)
@@ -1089,38 +1112,141 @@ describe('Warden contract tests', () => {
 
                 const reserve_amount = await warden.reserveAmount();
 
-                const oldBalance = await CRV.balanceOf(admin.address);
-
-                await warden.connect(admin).withdrawERC20(CRV.address, reserve_amount);
-
-                const newBalance = await CRV.balanceOf(admin.address);
-
-                const new_reserve_amount = await warden.reserveAmount();
-
-                expect(newBalance.sub(oldBalance)).to.be.eq(reserve_amount)
-                expect(new_reserve_amount).to.be.eq(0)
-
-            });
-
-            it(' should not allow to withdraw more then reserveAmount', async () => {
-
-                await CRV.connect(receiver).approve(warden.address, fee_amount)
-                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
-                await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
-
-                const reserve_amount = await warden.reserveAmount();
-
                 await expect(
-                    warden.connect(admin).withdrawERC20(CRV.address, reserve_amount.mul(2))
-                ).to.be.revertedWith('Warden: Reserve too low')
+                    warden.connect(admin).withdrawERC20(CRV.address, reserve_amount)
+                ).to.be.revertedWith('Warden: cannot withdraw from Reserve')
 
             });
 
             it(' should block non-admin caller', async () => {
 
                 await expect(
-                    warden.connect(externalUser).withdrawERC20(CRV.address, ethers.utils.parseEther('10'))
+                    warden.connect(externalUser).withdrawERC20(erc20.address, ethers.utils.parseEther('10'))
                 ).to.be.revertedWith('Ownable: caller is not the owner')
+
+            });
+
+        });
+
+        describe('depositToReserve', async () => {
+
+            const deposit_amount = ethers.utils.parseEther('100')
+
+            it(' should allow to deposit to the reserve', async () => {
+
+                //set Reserve Manager
+                await warden.connect(admin).setReserveManager(reserveManager.address)
+
+                await CRV.connect(receiver).transfer(reserveManager.address, deposit_amount);
+
+                await CRV.connect(reserveManager).approve(warden.address, deposit_amount);
+
+                const old_reserve_amount = await warden.reserveAmount();
+
+                const oldBalance = await CRV.balanceOf(reserveManager.address);
+
+                await warden.connect(reserveManager).depositToReserve(reserveManager.address, deposit_amount);
+
+                const newBalance = await CRV.balanceOf(reserveManager.address);
+
+                const new_reserve_amount = await warden.reserveAmount();
+
+                expect(oldBalance.sub(newBalance)).to.be.eq(deposit_amount)
+                expect(new_reserve_amount).to.be.eq(old_reserve_amount.add(deposit_amount))
+
+            });
+
+            it(' should block non-reserveManager caller', async () => {
+
+                await expect(
+                    warden.connect(externalUser).depositToReserve(reserveManager.address, deposit_amount)
+                ).to.be.revertedWith('Warden: call not allowed')
+
+                //set Reserve Manager
+                await warden.connect(admin).setReserveManager(reserveManager.address)
+
+                await expect(
+                    warden.connect(externalUser).depositToReserve(reserveManager.address, deposit_amount)
+                ).to.be.revertedWith('Warden: call not allowed')
+
+            });
+
+        });
+
+        describe('withdrawFromReserve', async () => {
+
+            const fee_amount = ethers.utils.parseEther('50');
+
+            it(' should allow to withdraw from the reserve', async () => {
+
+                //set Reserve Manager
+                await warden.connect(admin).setReserveManager(reserveManager.address)
+
+                //create a boost
+                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
+
+                //cancel the current Boost (from the receiver)
+                const token_id = await delegationBoost.get_token_id(
+                    delegator.address,
+                    (await delegationBoost.total_minted(delegator.address)).sub(1)
+                );
+                await delegationBoost.connect(receiver).cancel_boost(token_id);
+
+                const withdraw_amount = (await warden.reserveAmount()).div(2);
+
+                const old_reserve_amount = await warden.reserveAmount();
+
+                const oldBalance = await CRV.balanceOf(reserveManager.address);
+
+                await warden.connect(reserveManager).withdrawFromReserve(withdraw_amount);
+
+                const newBalance = await CRV.balanceOf(reserveManager.address);
+
+                const new_reserve_amount = await warden.reserveAmount();
+
+                expect(newBalance.sub(oldBalance)).to.be.eq(withdraw_amount)
+                expect(new_reserve_amount).to.be.eq(old_reserve_amount.sub(withdraw_amount))
+
+            });
+
+            it(' should not allow to withdraw more then reserveAmount', async () => {
+
+                //set Reserve Manager
+                await warden.connect(admin).setReserveManager(reserveManager.address)
+
+                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
+
+                //cancel the current Boost (from the receiver)
+                const token_id = await delegationBoost.get_token_id(
+                    delegator.address,
+                    (await delegationBoost.total_minted(delegator.address)).sub(1)
+                );
+                await delegationBoost.connect(receiver).cancel_boost(token_id);
+
+                const reserve_amount = await warden.reserveAmount();
+
+                await expect(
+                    warden.connect(admin).withdrawFromReserve(reserve_amount.mul(2))
+                ).to.be.revertedWith('Warden: Reserve too low')
+
+            });
+
+            it(' should block non-reserveManager caller', async () => {
+
+                await expect(
+                    warden.connect(externalUser).withdrawFromReserve(ethers.utils.parseEther('10'))
+                ).to.be.revertedWith('Warden: call not allowed')
+
+                //set Reserve Manager
+                await warden.connect(admin).setReserveManager(reserveManager.address)
+
+                await expect(
+                    warden.connect(externalUser).withdrawFromReserve(ethers.utils.parseEther('10'))
+                ).to.be.revertedWith('Warden: call not allowed')
 
             });
 
