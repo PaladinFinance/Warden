@@ -32,7 +32,7 @@ async function main() {
     const deployer = (await hre.ethers.getSigners())[0];
 
     const Warden = await ethers.getContractFactory("Warden");
-    const Utils = await ethers.getContractFactory("WardenUtils");
+    const Lens = await ethers.getContractFactory("WardenLens");
 
 
 
@@ -50,20 +50,20 @@ async function main() {
 
 
 
-    const utils = await Utils.deploy(
+    const lens = await Lens.deploy(
         VOTING_ESCROW_ADDRESS,
         DELEGATION_BOOST_ADDRESS,
         warden.address
     );
-    await utils.deployed();
+    await lens.deployed();
 
     console.log('Warden Utils : ')
-    console.log(utils.address)
+    console.log(lens.address)
 
 
 
     await warden.deployTransaction.wait(5);
-    await utils.deployTransaction.wait(5);
+    await lens.deployTransaction.wait(5);
 
 
 
@@ -79,7 +79,7 @@ async function main() {
     });
 
     await hre.run("verify:verify", {
-        address: utils.address,
+        address: lens.address,
         constructorArguments: [
             VOTING_ESCROW_ADDRESS,
             DELEGATION_BOOST_ADDRESS,

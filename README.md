@@ -39,7 +39,7 @@ This will install `Hardhat`, `Ethers v5`, and all the hardhat plugins used in th
 
 
 * [Warden](https://github.com/PaladinFinance/Warden/tree/main/contracts/Warden.sol) : Main contract
-* [WardenUtils](https://github.com/PaladinFinance/Warden/tree/main/contracts/WardenUtils.sol) : Contract to fetch & filter data from the Warden contract
+* [WardenLens](https://github.com/PaladinFinance/Warden/tree/main/contracts/WardenLens.sol) : Contract to fetch & filter data from the Warden contract
 
 
 ## Tests

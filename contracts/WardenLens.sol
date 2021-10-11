@@ -7,9 +7,9 @@ import "./Warden.sol";
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IVotingEscrowDelegation.sol";
 
-/** @title Utils for the Warden contract  */
+/** @title Lens of the Warden contract  */
 /// @author Paladin
-contract WardenUtils {
+contract WardenLens {
 
     uint256 public constant UNIT = 1e18;
     uint256 public constant MAX_PCT = 10000;
