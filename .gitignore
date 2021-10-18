@@ -15,3 +15,4 @@ bin/
 coverage*
 .env
 temp.txt
+.tenderly/

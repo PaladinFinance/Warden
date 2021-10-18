@@ -3,18 +3,7 @@ const hre = require("hardhat");
 
 const ethers = hre.ethers;
 
-const network = hre.network.name;
-
-const params_path = () => {
-    if (network === 'kovan') {
-        return '../utils/kovan_params'
-    }
-    else {
-        return '../utils/main_params'
-    }
-}
-
-const param_file_path = params_path();
+require("dotenv").config();
 
 const {
     FEE_TOKEN_ADDRESS,
@@ -22,14 +11,23 @@ const {
     DELEGATION_BOOST_ADDRESS,
     FEE_RATIO,
     MIN_PERCENT_REQUIRED
-} = require(param_file_path);
+} = require('../utils/main_params');
 
 
 async function main() {
 
-    console.log('Deploying Warden  ...')
-
     const deployer = (await hre.ethers.getSigners())[0];
+
+    const network = hre.tenderly.network();
+
+    const provider = new ethers.providers.Web3Provider(network)
+    ethers.provider = provider
+
+    console.log('- Connecting to a Tenderly Fork');
+    await network.setFork(process.env.TENDERLY_FORK_ID);
+    await network.setHead(process.env.TENDERLY_HEAD_ID);
+
+    console.log('Deploying Warden  ...')
 
     const Warden = await ethers.getContractFactory("Warden");
     const Lens = await ethers.getContractFactory("WardenLens");
@@ -67,25 +65,20 @@ async function main() {
 
 
 
-    await hre.run("verify:verify", {
+    await network.verify({
         address: warden.address,
-        constructorArguments: [
-            FEE_TOKEN_ADDRESS,
-            VOTING_ESCROW_ADDRESS,
-            DELEGATION_BOOST_ADDRESS,
-            FEE_RATIO,
-            MIN_PERCENT_REQUIRED
-        ],
+        name: "Warden"
     });
 
-    await hre.run("verify:verify", {
+    await network.verify({
         address: lens.address,
-        constructorArguments: [
-            VOTING_ESCROW_ADDRESS,
-            DELEGATION_BOOST_ADDRESS,
-            warden.address
-        ],
+        name: "WardenLens"
     });
+
+    const postDeployHead = network.getHead()
+
+    console.log("New Tenderly Head ID", postDeployHead)
+
 
 }
 

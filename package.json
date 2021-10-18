@@ -9,7 +9,10 @@
     "test": "npx hardhat test",
     "generate-scores": "ts-node scripts/merkle/generate-scores.ts",
     "generate-merkle-root": "ts-node scripts/merkle/generate-merkle-root.ts --",
-    "verify-merkle-root": "ts-node scripts/merkle/verify-merkle-root.ts --"
+    "verify-merkle-root": "ts-node scripts/merkle/verify-merkle-root.ts --",
+    "tenderly-fork": "npx hardhat run --network tenderly scripts/utils/tenderly_create_fork.ts",
+    "tenderly-balance": "npx hardhat run --network tenderly scripts/utils/tenderly_balance.ts",
+    "tenderly-deploy": "npx hardhat run --network tenderly scripts/deploy/deploy_tenderly.ts"
   },
   "author": "",
   "license": "MIT",
@@ -36,6 +39,8 @@
     "typescript": "^4.3.5"
   },
   "dependencies": {
+    "@tenderly/hardhat-tenderly": "^1.1.0-beta.6",
+    "axios": "^0.21.4",
     "dotenv": "^10.0.0"
   }
 }

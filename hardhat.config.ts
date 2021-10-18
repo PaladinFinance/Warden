@@ -5,7 +5,8 @@ import "@typechain/hardhat";
 import "hardhat-contract-sizer";
 import "@nomiclabs/hardhat-etherscan";
 import "solidity-coverage";
-import "hardhat-gas-reporter"
+import "hardhat-gas-reporter";
+import '@tenderly/hardhat-tenderly';
 
 require("dotenv").config();
 
@@ -43,6 +44,13 @@ const config: HardhatUserConfig = {
       /*accounts: {
         mnemonic: process.env.KOVAN_MNEMONIC,
       },*/
+    },
+    tenderly: {
+      url: "https://rpc.tenderly.co/fork/" + (process.env.TENDERLY_FORK_ID || ''),
+      accounts: [process.env.MAINNET_PRIVATE_KEY || ''],
+      /*accounts: {
+        mnemonic: process.env.KOVAN_MNEMONIC,
+      },*/
     }
   },
   etherscan: {
@@ -56,6 +64,11 @@ const config: HardhatUserConfig = {
   },
   gasReporter: {
     enabled: false
+  },
+  tenderly: {
+    project: process.env.TENDERLY_PROJECT || '',
+    username: process.env.TENDERLY_USERNAME || '',
+    forkNetwork: '1', //Network id of the network we want to fork
   }
 };
 
