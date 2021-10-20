@@ -14,9 +14,9 @@ const MIN_PERCENT_REQUIRED = 1000 //10%
 
 //Deploys
 
-WARDEN_ADDRESS = ""
+const WARDEN_ADDRESS = ""
 
-WARDEN_UTILS_ADDRESS = ""
+const WARDEN_UTILS_ADDRESS = ""
 
 module.exports = {
     FEE_TOKEN_ADDRESS,

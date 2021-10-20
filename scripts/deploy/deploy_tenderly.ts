@@ -23,7 +23,7 @@ async function main() {
     const provider = new ethers.providers.Web3Provider(network)
     ethers.provider = provider
 
-    console.log('- Connecting to a Tenderly Fork');
+    console.log('Connecting to a Tenderly Fork');
     await network.setFork(process.env.TENDERLY_FORK_ID);
     await network.setHead(process.env.TENDERLY_HEAD_ID);
 
@@ -60,10 +60,10 @@ async function main() {
 
 
 
-    await warden.deployTransaction.wait(5);
-    await lens.deployTransaction.wait(5);
+    //await warden.deployTransaction.wait(5);
+    //await lens.deployTransaction.wait(5);
 
-
+    console.log('Verifying the contracts on Tenderly : ')
 
     await network.verify({
         address: warden.address,

@@ -14,9 +14,9 @@ const MIN_PERCENT_REQUIRED = 1000 //10%
 
 //Deploys
 
-/*WARDEN_ADDRESS = "null"
+/*const WARDEN_ADDRESS = "null"
 
-WARDEN_LENS_ADDRESS = "null"*/
+const WARDEN_LENS_ADDRESS = "null"*/
 
 module.exports = {
     FEE_TOKEN_ADDRESS,

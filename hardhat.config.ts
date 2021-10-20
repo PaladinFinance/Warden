@@ -38,19 +38,17 @@ const config: HardhatUserConfig = {
         blockNumber: 13170000
       }
     },
+    mainnet: {
+      url: process.env.MAINNET_URI,
+      accounts: [process.env.MAINNET_PRIVATE_KEY || ''],
+    },
     kovan: {
       url: process.env.KOVAN_URI,
       accounts: [process.env.KOVAN_PRIVATE_KEY || ''],
-      /*accounts: {
-        mnemonic: process.env.KOVAN_MNEMONIC,
-      },*/
     },
     tenderly: {
       url: "https://rpc.tenderly.co/fork/" + (process.env.TENDERLY_FORK_ID || ''),
       accounts: [process.env.MAINNET_PRIVATE_KEY || ''],
-      /*accounts: {
-        mnemonic: process.env.KOVAN_MNEMONIC,
-      },*/
     }
   },
   etherscan: {
