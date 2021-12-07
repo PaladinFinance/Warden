@@ -117,6 +117,36 @@
     },
     {
         "inputs": [],
+        "name": "getPrices",
+        "outputs": [
+            {
+                "components": [
+                    {
+                        "internalType": "uint256",
+                        "name": "highest",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "lowest",
+                        "type": "uint256"
+                    },
+                    {
+                        "internalType": "uint256",
+                        "name": "median",
+                        "type": "uint256"
+                    }
+                ],
+                "internalType": "struct WardenLens.Prices",
+                "name": "prices",
+                "type": "tuple"
+            }
+        ],
+        "stateMutability": "view",
+        "type": "function"
+    },
+    {
+        "inputs": [],
         "name": "votingEscrow",
         "outputs": [
             {

@@ -13,6 +13,7 @@ contract WardenLens {
 
     uint256 public constant UNIT = 1e18;
     uint256 public constant MAX_PCT = 10000;
+    uint256 public constant MAX_UINT = 2**256 - 1;
 
     IVotingEscrow public votingEscrow;
     IVotingEscrowDelegation public delegationBoost;
@@ -42,7 +43,7 @@ contract WardenLens {
     }
 
     function _canDelegate(address delegator, uint256 amount) internal view returns(bool) {
-        if (!delegationBoost.isApprovedForAll(delegator, address(this)))
+        if (!delegationBoost.isApprovedForAll(delegator, address(warden)))
             return false;
 
         // Delegator current balance
@@ -94,7 +95,7 @@ contract WardenLens {
         address[] memory availableDelegators = new address[](totalNbOffers);
         uint256 availableIndex = 0;
 
-        for(uint256 i = 0; i < totalNbOffers; i++){
+        for(uint256 i = 1; i < totalNbOffers; i++){ //since the offer at index 0 is useless
             (address delegator , ,uint256 minPerc ,) = warden.offers(i);
             uint256 balance = votingEscrow.balanceOf(delegator);
             if(_canDelegate(delegator, (balance * minPerc) / MAX_PCT)){
@@ -104,6 +105,39 @@ contract WardenLens {
         }
 
         return availableDelegators;
+    }
+
+    struct Prices {
+        uint256 highest;
+        uint256 lowest;
+        uint256 median;
+    }
+
+    function getPrices() external view returns(Prices memory prices) {
+        uint256 totalNbOffers = warden.offersIndex();
+        uint256 sumPrices;
+
+        if(totalNbOffers <= 1) return prices; //Case where no Offer in the list
+
+        prices.lowest = MAX_UINT; //Set max amount as lowest value instead of 0
+
+        for(uint256 i = 1; i < totalNbOffers; i++){ //since the offer at index 0 is useless
+            (,uint256 offerPrice,,) = warden.offers(i);
+
+            sumPrices += offerPrice;
+
+            if(offerPrice > prices.highest){
+                prices.highest = offerPrice;
+            }
+            if(offerPrice < prices.lowest && offerPrice != 0){
+                prices.lowest = offerPrice;
+            }
+        }
+
+        prices.median = sumPrices / (totalNbOffers - 1);
+
+        return prices;
+        
     }
 
 }

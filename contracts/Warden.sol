@@ -30,9 +30,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address user;
         // Price per vote, set by the user
         uint256 pricePerVote;
-        // Minimum percent of users voting token balance to delegate
+        // Minimum percent of users voting token balance to buy for a Boost
         uint16 minPerc; //bps
-        // Maximum percent of users voting token balance to delegate
+        // Maximum percent of users total voting token balance available to delegate
         uint16 maxPerc; //bps
     }
 
@@ -130,8 +130,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Registers a new user wanting to sell its delegation
      * @dev Regsiters a new user, creates a BoostOffer with the given parameters
      * @param pricePerVote Price of 1 vote per second
-     * @param minPerc Minimum of the delegator balance allowed to use for Boost
-     * @param maxPerc Maximum of the delegator balance allowed to use for Boost
+     * @param minPerc Minimum percent of users voting token balance to buy for a Boost
+     * @param maxPerc Maximum percent of users total voting token balance available to delegate
      */
     function register(
         uint256 pricePerVote,
@@ -163,8 +163,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Updates an user BoostOffer parameters
      * @dev Updates parameters for the user's BoostOffer
      * @param pricePerVote Price of 1 vote per second
-     * @param minPerc Minimum of the delegator balance allowed to use for Boost
-     * @param maxPerc Maximum of the delegator balance allowed to use for Boost
+     * @param minPerc Minimum percent of users voting token balance to buy for a Boost
+     * @param maxPerc Maximum percent of users total voting token balance available to delegate
      */
     function updateOffer(
         uint256 pricePerVote,
