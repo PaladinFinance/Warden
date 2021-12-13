@@ -243,7 +243,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(delegator != address(0), "Warden: Zero address");
         require(userIndex[delegator] != 0, "Warden: Not registered");
         require(
-            percent > minPercRequired,
+            percent >= minPercRequired,
             "Warden: Percent under min required"
         );
         require(percent <= MAX_PCT, "Warden: Percent over 100");
@@ -311,7 +311,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(userIndex[delegator] != 0, "Warden: Not registered");
         require(maxFeeAmount > 0, "Warden: No fees");
         require(
-            percent > minPercRequired,
+            percent >= minPercRequired,
             "Warden: Percent under min required"
         );
         require(percent <= MAX_PCT, "Warden: Percent over 100");
