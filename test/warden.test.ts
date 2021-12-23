@@ -1160,14 +1160,14 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(externalUser).depositToReserve(reserveManager.address, deposit_amount)
-                ).to.be.revertedWith('Warden: call not allowed')
+                ).to.be.revertedWith('Warden: Not allowed')
 
                 //set Reserve Manager
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 await expect(
                     warden.connect(externalUser).depositToReserve(reserveManager.address, deposit_amount)
-                ).to.be.revertedWith('Warden: call not allowed')
+                ).to.be.revertedWith('Warden: Not allowed')
 
             });
 
@@ -1239,14 +1239,14 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(externalUser).withdrawFromReserve(ethers.utils.parseEther('10'))
-                ).to.be.revertedWith('Warden: call not allowed')
+                ).to.be.revertedWith('Warden: Not allowed')
 
                 //set Reserve Manager
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 await expect(
                     warden.connect(externalUser).withdrawFromReserve(ethers.utils.parseEther('10'))
-                ).to.be.revertedWith('Warden: call not allowed')
+                ).to.be.revertedWith('Warden: Not allowed')
 
             });
 

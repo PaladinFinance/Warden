@@ -86,7 +86,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     event Claim(address indexed user, uint256 amount);
 
     modifier onlyAllowed(){
-        require(msg.sender == reserveManager || msg.sender == owner(), "Warden: call not allowed");
+        require(msg.sender == reserveManager || msg.sender == owner(), "Warden: Not allowed");
         _;
     }
 
@@ -262,6 +262,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             percent >= offer.minPerc && percent <= offer.maxPerc,
             "Warden: Percent out of Offer bounds"
         );
+        uint256 expiryTime = ((block.timestamp + durationSeconds) / WEEK) * WEEK;
+        expiryTime = (expiryTime < block.timestamp + durationSeconds) ?
+            ((block.timestamp + durationSeconds + WEEK) / WEEK) * WEEK :
+            expiryTime;
+        require(
+            expiryTime <= votingEscrow.locked__end(delegator),
+            "Warden: Lock expires before Boost"
+        );
 
         // Find how much of the delegator's tokens the given percent represents
         uint256 delegatorBalance = votingEscrow.balanceOf(delegator);
@@ -367,6 +375,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         vars.expiryTime = (vars.expiryTime < block.timestamp + vars.boostDuration) ?
             ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
             vars.expiryTime;
+        require(
+            vars.expiryTime <= votingEscrow.locked__end(delegator),
+            "Warden: Lock expires before Boost"
+        );
 
         // VotingEscrowDelegation needs the percent of available tokens for delegation when creating the boost, instead of
         // the percent of the users balance. We calculate this percent representing the amount of tokens wanted by the buyer

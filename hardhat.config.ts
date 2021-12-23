@@ -28,7 +28,7 @@ const config: HardhatUserConfig = {
   },
   contractSizer: {
     alphaSort: true,
-    runOnCompile: false,
+    runOnCompile: true,
     disambiguatePaths: false,
   },
   networks: {
@@ -61,7 +61,7 @@ const config: HardhatUserConfig = {
     target: "ethers-v5"
   },
   gasReporter: {
-    enabled: false
+    enabled: true
   },
   tenderly: {
     project: process.env.TENDERLY_PROJECT || '',
