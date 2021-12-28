@@ -146,8 +146,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         );
 
         require(pricePerVote > 0, "Warden: Price cannot be 0");
-        require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
         require(maxPerc <= 10000, "Warden: maxPerc too high");
+        require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
         require(minPerc >= minPercRequired, "Warden: minPerc too low");
 
         // Create the BoostOffer for the new user, and add it to the storage
@@ -182,8 +182,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(offer.user == msg.sender, "Warden: Not offer owner");
 
         require(pricePerVote > 0, "Warden: Price cannot be 0");
-        require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
         require(maxPerc <= 10000, "Warden: maxPerc too high");
+        require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
         require(minPerc >= minPercRequired, "Warden: minPerc too low");
 
         // Update the parameters
