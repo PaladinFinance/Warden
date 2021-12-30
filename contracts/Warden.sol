@@ -291,6 +291,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 toDelegateAmount;
         uint256 realFeeAmount;
         uint256 expiryTime;
+        uint256 cancelTime;
         uint256 boostPercent;
         uint256 newId;
         uint256 newTokenId;
@@ -387,13 +388,18 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         // Get the id (depending on the delegator) for the new Boost
         vars.newId = delegationBoost.total_minted(delegator);
+        unchecked {
+            // cancelTime stays current timestamp + paid duration
+            // Should not overflow : Since expiryTime is the same + some extra time, expiryTime >= cancelTime
+            vars.cancelTime = block.timestamp + vars.boostDuration;
+        }
 
         // Creates the DelegationBoost
         delegationBoost.create_boost(
             delegator,
             receiver,
             int256(vars.boostPercent),
-            (block.timestamp + vars.boostDuration), // cancelTime, stays current timestamp + paid duration
+            vars.cancelTime,
             vars.expiryTime,
             vars.newId
         );
@@ -532,7 +538,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 potentialBalance = availableBalance;
 
         uint256 nbTokens = delegationBoost.total_minted(delegator);
-        uint256[256] memory toCancel;
+        uint256[256] memory toCancel; //Need this type of array because of batch_cancel_boosts() from veBoost
         uint256 nbToCancel = 0;
 
         // Loop over the delegator current boosts to find expired ones
@@ -597,7 +603,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         );
 
         // If fees to be claimed, update the mapping, and send the amount
-        earnedFees[user] -= amount;
+        unchecked{
+            // Should not underflow, since the amount was either checked in the claim() method, or set as earnedFees[user]
+            earnedFees[user] -= amount;
+        }
 
         feeToken.safeTransfer(user, amount);
 
