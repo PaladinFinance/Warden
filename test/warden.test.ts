@@ -1324,7 +1324,7 @@ describe('Warden contract tests', () => {
 
             });
 
-            it(' should not allow to withdraw from the reserve', async () => {
+            it(' should not allow to withdraw the fee Token', async () => {
 
                 //create a boost
                 await CRV.connect(receiver).approve(warden.address, fee_amount)
@@ -1338,11 +1338,39 @@ describe('Warden contract tests', () => {
                 );
                 await delegationBoost.connect(receiver).cancel_boost(token_id);
 
-                const reserve_amount = await warden.reserveAmount();
+                const crv_amount = await CRV.balanceOf(warden.address);
 
                 await expect(
-                    warden.connect(admin).withdrawERC20(CRV.address, reserve_amount)
-                ).to.be.revertedWith('Warden: cannot withdraw from Reserve')
+                    warden.connect(admin).withdrawERC20(CRV.address, crv_amount)
+                ).to.be.revertedWith('Warden: cannot withdraw fee Token')
+
+            });
+
+            it(' should not allow to withdraw the feeToken is claim has been blocked', async () => {
+
+                //create a boost
+                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
+
+                //cancel the current Boost (from the receiver)
+                const token_id = await delegationBoost.get_token_id(
+                    delegator.address,
+                    (await delegationBoost.total_minted(delegator.address)).sub(1)
+                );
+                await delegationBoost.connect(receiver).cancel_boost(token_id);
+
+                await warden.connect(admin).blockClaim()
+
+                const crv_amount = await CRV.balanceOf(warden.address);
+
+                const oldBalance = await CRV.balanceOf(admin.address);
+
+                await warden.connect(admin).withdrawERC20(CRV.address, crv_amount)
+
+                const newBalance = await CRV.balanceOf(admin.address);
+
+                expect(newBalance.sub(oldBalance)).to.be.eq(crv_amount)
 
             });
 

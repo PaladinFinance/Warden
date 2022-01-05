@@ -727,7 +727,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param amount Amount to transfer
      */
     function withdrawERC20(address token, uint256 amount) external onlyOwner returns(bool) {
-        require(token != address(feeToken), "Warden: cannot withdraw from Reserve");
+        require(_claimBlocked || token != address(feeToken), "Warden: cannot withdraw fee Token"); //We want to be able to recover the fees if there is an issue
         IERC20(token).safeTransfer(owner(), amount);
 
         return true;
