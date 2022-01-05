@@ -9,6 +9,8 @@ interface IVotingEscrowDelegation {
 
     function ownerOf(uint256 tokenId) external view returns(address);
 
+    function balanceOf(uint256 tokenId) external view returns(uint256);
+
     function token_of_delegator_by_index(address delegator, uint256 index) external view returns(uint256);
 
     function total_minted(address delegator) external view returns(uint256);

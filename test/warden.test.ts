@@ -54,7 +54,7 @@ describe('Warden contract tests', () => {
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const crv_amount = ethers.utils.parseEther('2500');
+        const crv_amount = ethers.utils.parseEther('3000');
         const lock_amount = ethers.utils.parseEther('1000');
 
         CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
@@ -703,8 +703,34 @@ describe('Warden contract tests', () => {
 
         });
 
-    });
+        it(' should buy a 2nd Boost if the 1st one is canceled by Receiver', async () => {
 
+            await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount)
+
+            const token_id_1 = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            await delegationBoost.connect(receiver).cancel_boost(token_id_1)
+
+            const boost_2_percent = 5000
+
+            await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, boost_2_percent, duration, fee_amount)
+
+            const token_id_2 = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            expect(await delegationBoost.token_boost(token_id_2)).not.to.be.eq(0)
+
+            // Cancel Boost by receiver (so delegator is available for later tests)
+            await delegationBoost.connect(receiver).cancel_boost(token_id_2)
+
+        });
+
+    });
 
     describe('cancelDelegationBoost', async () => {
 
@@ -764,6 +790,43 @@ describe('Warden contract tests', () => {
             expect(await delegationBoost.token_boost(token_id)).to.be.eq(0)
             expect(await delegationBoost.token_cancel_time(token_id)).to.be.eq(0)
             expect(await delegationBoost.token_expiry(token_id)).to.be.eq(0)
+
+        });
+
+        it(' should Cancel the Boost, and allow a new BoostPruchase', async () => {
+
+            const token_id = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            await expect(
+                warden.connect(delegator).cancelDelegationBoost(token_id)
+            ).to.be.revertedWith('Cannot cancel the boost')
+
+            const current_time = (await ethers.provider.getBlock(await ethers.provider.blockNumber)).timestamp
+            const cancel_time = await delegationBoost.token_cancel_time(token_id)
+            const time_to_skip = cancel_time.sub(current_time)
+            await advanceTime(time_to_skip.toNumber())
+
+            await warden.connect(delegator).cancelDelegationBoost(token_id)
+
+            expect(await delegationBoost.token_boost(token_id)).to.be.eq(0)
+            expect(await delegationBoost.token_cancel_time(token_id)).to.be.eq(0)
+            expect(await delegationBoost.token_expiry(token_id)).to.be.eq(0)
+
+            const fee_amount = ethers.utils.parseEther('50');
+
+            await CRV.connect(receiver).approve(warden.address, 0)
+            await CRV.connect(receiver).approve(warden.address, fee_amount)
+            await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
+
+            // Cancel Boost by receiver (so delegator is available for later tests)
+            const token_id2 = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+            await delegationBoost.connect(receiver).cancel_boost(token_id2)
 
         });
 
@@ -852,6 +915,18 @@ describe('Warden contract tests', () => {
 
         });
 
+        it(' should not allow to claim 0 amount', async () => {
+
+            await expect(
+                warden.connect(externalUser)["claim()"]()
+            ).to.be.revertedWith('Warden: Claim null amount')
+
+            await expect(
+                warden.connect(externalUser)["claim(uint256)"](0)
+            ).to.be.revertedWith('Warden: Claim null amount')
+
+        });
+
         it(' should not allow to claim more than earned', async () => {
 
             const earned = await warden.claimable(delegator.address)
@@ -908,6 +983,96 @@ describe('Warden contract tests', () => {
 
         });
 
+        it(' should not claim if 0 fees to claim', async () => {
+
+            await expect(
+                warden.connect(externalUser).claimAndCancel()
+            ).not.to.emit(warden, 'Claim')
+
+        });
+
+        it(' should claim the earned amount, and cancel finished Boosts, and allow new BoostPurchase', async () => {
+
+            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await CRV.connect(receiver).transfer(externalUser.address, fee_amount);
+
+            await CRV.connect(receiver).approve(warden.address, fee_amount)
+            await CRV.connect(externalUser).approve(warden.address, fee_amount)
+            await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 4000, 2, fee_amount);
+            await warden.connect(externalUser).buyDelegationBoost(delegator.address, externalUser.address, 3500, 3, fee_amount);
+
+            const token_id = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1) //this way, should be last one created, lasting the longer
+            )
+
+            const current_time = (await ethers.provider.getBlock(await ethers.provider.getBlockNumber())).timestamp
+            const cancel_time = await delegationBoost.token_cancel_time(token_id)
+            const time_to_skip = cancel_time.sub(current_time)
+            await advanceTime(time_to_skip.add(100).toNumber())
+
+            const earned = await warden.claimable(delegator.address)
+
+            const old_Balance = await CRV.balanceOf(delegator.address)
+
+            await expect(warden.connect(delegator).claimAndCancel())
+                .to.emit(warden, 'Claim')
+                .withArgs(delegator.address, earned);
+
+            const new_Balance = await CRV.balanceOf(delegator.address)
+
+            expect(new_Balance.sub(old_Balance)).to.be.eq(earned)
+            expect(await warden.claimable(delegator.address)).to.be.eq(0)
+
+            expect(await delegationBoost.token_boost(token_id)).to.be.eq(0)
+            expect(await delegationBoost.token_cancel_time(token_id)).to.be.eq(0)
+            expect(await delegationBoost.token_expiry(token_id)).to.be.eq(0)
+
+            const buy_percent = 5000
+
+            const duration = 2
+
+            let fee_amount2 = await warden.estimateFees(delegator.address, buy_percent, duration)
+
+            await CRV.connect(receiver).approve(warden.address, 0)
+            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+
+            const old_balance = await CRV.balanceOf(receiver.address)
+
+            const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount2)
+
+            const new_balance = await CRV.balanceOf(receiver.address)
+            const paidFees = old_balance.sub(new_balance)
+
+            const token_id2 = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            const boost_amount = await delegationBoost.token_boost(token_id2)
+            const boost_expire_time = await delegationBoost.token_expiry(token_id2)
+
+            await expect(buy_tx)
+                .to.emit(warden, 'BoostPurchase')
+                .withArgs(
+                    delegator.address,
+                    receiver.address,
+                    token_id2,
+                    buy_percent,
+                    price_per_vote,
+                    paidFees,
+                    boost_expire_time
+                );
+
+            expect(paidFees).to.be.lt(fee_amount)
+
+            expect(boost_amount).not.to.be.eq(0)
+
+            // Cancel Boost by receiver (so delegator is available for later tests)
+            await delegationBoost.connect(receiver).cancel_boost(token_id2)
+
+        });
+
     });
 
 
@@ -920,7 +1085,7 @@ describe('Warden contract tests', () => {
                 await warden.connect(admin).pause();
 
                 await expect(
-                    warden.connect(receiver)["claim()"]()
+                    warden.connect(delegator).register(price_per_vote, 2000, 10000)
                 ).to.be.reverted
 
             });
@@ -944,7 +1109,7 @@ describe('Warden contract tests', () => {
                 await warden.connect(admin).unpause();
 
                 await expect(
-                    warden.connect(receiver)["claim()"]()
+                    warden.connect(delegator).register(price_per_vote, 2000, 10000)
                 ).not.to.be.reverted
 
             });
@@ -953,6 +1118,69 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(externalUser).unpause()
+                ).to.be.reverted
+
+            });
+
+        });
+
+        describe('blockClaim / unblockClaim', async () => {
+
+            const min_perc = 2000
+            const max_perc = 10000
+
+            beforeEach(async () => {
+
+                await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+
+                const fee_amount = ethers.utils.parseEther('50');
+
+                await CRV.connect(receiver).approve(warden.address, fee_amount)
+                await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
+
+                //cancel the current Boost (from the receiver)
+                const token_id = await delegationBoost.get_token_id(
+                    delegator.address,
+                    (await delegationBoost.total_minted(delegator.address)).sub(1)
+                );
+                await delegationBoost.connect(receiver).cancel_boost(token_id);
+
+            });
+
+            it(' should allow admin to block fee claims', async () => {
+
+                await warden.connect(admin).blockClaim();
+
+                await expect(
+                    warden.connect(delegator)["claim()"]()
+                ).to.be.revertedWith("Warden: Claim blocked")
+
+            });
+
+            it(' should allow admin to unblock the fee claims', async () => {
+
+                await warden.connect(admin).blockClaim()
+
+                await expect(
+                    warden.connect(delegator)["claim()"]()
+                ).to.be.revertedWith("Warden: Claim blocked")
+
+                await warden.connect(admin).unblockClaim()
+
+                await expect(
+                    warden.connect(delegator)["claim()"]()
+                ).not.to.be.reverted
+
+            });
+
+            it(' should block non-admin caller', async () => {
+
+                await expect(
+                    warden.connect(externalUser).blockClaim()
+                ).to.be.reverted
+
+                await expect(
+                    warden.connect(externalUser).unblockClaim()
                 ).to.be.reverted
 
             });
