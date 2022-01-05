@@ -65,6 +65,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /** @notice Amount of fees earned by users through Boost selling */
     mapping(address => uint256) public earnedFees;
 
+    bool private _claimBlocked;
+
     // Events :
 
     event Registred(address indexed user, uint256 price);
@@ -480,7 +482,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Claims all earned fees
      * @dev Send all the user's earned fees
      */
-    function claim() external whenNotPaused nonReentrant returns(bool) {
+    function claim() external nonReentrant returns(bool) {
+        require(
+            earnedFees[msg.sender] != 0,
+            "Warden: Claim null amount"
+        );
         return _claim(msg.sender, earnedFees[msg.sender]);
     }
 
@@ -488,7 +494,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Claims all earned fees, and cancel all expired Delegation Boost for the user
      * @dev Send all the user's earned fees, and fetch all expired Boosts to cancel them
      */
-    function claimAndCancel() external whenNotPaused nonReentrant returns(bool) {
+    function claimAndCancel() external nonReentrant returns(bool) {
         _cancelAllExpired(msg.sender);
         return _claim(msg.sender, earnedFees[msg.sender]);
     }
@@ -498,8 +504,12 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @dev Send the given amount of earned fees (if amount is correct)
      * @param amount Amount of earned fees to claim
      */
-    function claim(uint256 amount) external whenNotPaused nonReentrant returns(bool) {
+    function claim(uint256 amount) external nonReentrant returns(bool) {
         require(amount <= earnedFees[msg.sender], "Warden: Amount too high");
+        require(
+            amount != 0,
+            "Warden: Claim null amount"
+        );
         return _claim(msg.sender, amount);
     }
 
@@ -598,9 +608,15 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     function _claim(address user, uint256 amount) internal returns(bool) {
         require(
+            !_claimBlocked,
+            "Warden: Claim blocked"
+        );
+        require(
             amount <= feeToken.balanceOf(address(this)),
             "Warden: Insufficient cash"
         );
+
+        if(amount == 0) return true; // nothing to claim, but used in claimAndCancel()
 
         // If fees to be claimed, update the mapping, and send the amount
         unchecked{
@@ -654,6 +670,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     /**
+     * @notice Updates the Delegation Boost (veBoost)
+     * @param newDelegationBoost New veBoost contract address
+     */
+    function setDelegationBoost(address newDelegationBoost) external onlyOwner {
+        delegationBoost = IVotingEscrowDelegation(newDelegationBoost);
+    }
+
+    /**
      * @notice Updates the Reserve Manager
      * @param newReserveManager New Reserve Manager address
      */
@@ -673,6 +697,28 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function unpause() external onlyOwner {
         _unpause();
+    }
+
+    /**
+     * @notice Block user fee claims
+     */
+    function blockClaim() external onlyOwner {
+        require(
+            !_claimBlocked,
+            "Warden: Claim blocked"
+        );
+        _claimBlocked = true;
+    }
+
+    /**
+     * @notice Unblock user fee claims
+     */
+    function unblockClaim() external onlyOwner {
+        require(
+            _claimBlocked,
+            "Warden: Claim not blocked"
+        );
+        _claimBlocked = false;
     }
 
     /**
