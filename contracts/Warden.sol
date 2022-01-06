@@ -12,7 +12,7 @@ import "./interfaces/IVotingEscrowDelegation.sol";
 /** @title Warden contract  */
 /// @author Paladin
 /*
-    Delegation market based on Curve VestingEscrowDelegation contract
+    Delegation market based on Curve VotingEscrowDelegation contract
 */
 contract Warden is Ownable, Pausable, ReentrancyGuard {
     using SafeERC20 for IERC20;
@@ -24,11 +24,16 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     // Storage :
 
-    /** @notice Offer made by an user to buy a given amount of his votes */
+    /** @notice Offer made by an user to buy a given amount of his votes 
+    user : Address of the user making the offer
+    pricePerVote : Price per vote per second, set by the user
+    minPerc : Minimum percent of users voting token balance to buy for a Boost (in BPS)
+    maxPerc : Maximum percent of users total voting token balance available to delegate (in BPS)
+    */
     struct BoostOffer {
         // Address of the user making the offer
         address user;
-        // Price per vote, set by the user
+        // Price per vote per second, set by the user
         uint256 pricePerVote;
         // Minimum percent of users voting token balance to buy for a Boost
         uint16 minPerc; //bps
@@ -43,14 +48,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /** @notice Address of the Delegation Boost contract */
     IVotingEscrowDelegation public delegationBoost;
 
-    /** @notice ratio of fees to be set as Reserve */
+    /** @notice ratio of fees to be set as Reserve (in BPS) */
     uint256 public feeReserveRatio; //bps
     /** @notice Total Amount in the Reserve */
     uint256 public reserveAmount;
     /** @notice Address allowed to withdraw from the Reserve */
     address public reserveManager;
 
-    /** @notice Min Percent of delegator votes to buy required to purchase a Delegation Boost */
+    /** @notice Min Percent of delegator votes to buy required to purchase a Delegation Boost (in BPS) */
     uint256 public minPercRequired; //bps
 
     /** @notice Minimum delegation time, taken from veBoost contract */
@@ -131,9 +136,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /**
      * @notice Registers a new user wanting to sell its delegation
      * @dev Regsiters a new user, creates a BoostOffer with the given parameters
-     * @param pricePerVote Price of 1 vote per second
-     * @param minPerc Minimum percent of users voting token balance to buy for a Boost
-     * @param maxPerc Maximum percent of users total voting token balance available to delegate
+     * @param pricePerVote Price of 1 vote per second (in wei)
+     * @param minPerc Minimum percent of users voting token balance to buy for a Boost (in BPS)
+     * @param maxPerc Maximum percent of users total voting token balance available to delegate (in BPS)
      */
     function register(
         uint256 pricePerVote,
@@ -164,9 +169,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /**
      * @notice Updates an user BoostOffer parameters
      * @dev Updates parameters for the user's BoostOffer
-     * @param pricePerVote Price of 1 vote per second
-     * @param minPerc Minimum percent of users voting token balance to buy for a Boost
-     * @param maxPerc Maximum percent of users total voting token balance available to delegate
+     * @param pricePerVote Price of 1 vote per second (in wei)
+     * @param minPerc Minimum percent of users voting token balance to buy for a Boost (in BPS)
+     * @param maxPerc Maximum percent of users total voting token balance available to delegate (in BPS)
      */
     function updateOffer(
         uint256 pricePerVote,
@@ -234,8 +239,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Gives an estimate of fees to pay for a given Boost Delegation
      * @dev Calculates the amount of fees for a Boost Delegation with the given amount (through the percent) and the duration
      * @param delegator Address of the delegator for the Boost
-     * @param percent Percent of the delegator balance to delegate
-     * @param duration Duration (in days) of the Boost
+     * @param percent Percent of the delegator balance to delegate (in BPS)
+     * @param duration Duration (in weeks) of the Boost to purchase
      */
     function estimateFees(
         address delegator,
@@ -304,9 +309,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @dev If all parameters match the offer from the delegator, creates a Boost for the caller
      * @param delegator Address of the delegator for the Boost
      * @param receiver Address of the receiver of the Boost
-     * @param percent Percent of the delegator balance to delegate
-     * @param duration Duration (in days) of the Boost
-     * @param maxFeeAmount Maximum amount of feeToken available to pay to cover the Boost Duration
+     * @param percent Percent of the delegator balance to delegate (in BPS)
+     * @param duration Duration (in weeks) of the Boost to purchase
+     * @param maxFeeAmount Maximum amount of feeToken available to pay to cover the Boost Duration (in wei)
      */
     function buyDelegationBoost(
         address delegator,
@@ -644,7 +649,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @notice Updates the minimum percent required to buy a Boost
-     * @param newMinPercRequired New minimum percent required to buy a Boost
+     * @param newMinPercRequired New minimum percent required to buy a Boost (in BPS)
      */
     function setMinPercRequired(uint256 newMinPercRequired) external onlyOwner {
         require(newMinPercRequired > 0 && newMinPercRequired <= 10000);
@@ -653,7 +658,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         /**
      * @notice Updates the minimum delegation time
-     * @param newMinDelegationTime New minimum deelgation time
+     * @param newMinDelegationTime New minimum deelgation time (in seconds)
      */
     function setMinDelegationTime(uint256 newMinDelegationTime) external onlyOwner {
         require(newMinDelegationTime > 0);
@@ -662,7 +667,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     /**
      * @notice Updates the ratio of Fees set for the Reserve
-     * @param newFeeReserveRatio New ratio
+     * @param newFeeReserveRatio New ratio (in BPS)
      */
     function setFeeReserveRatio(uint256 newFeeReserveRatio) external onlyOwner {
         require(newFeeReserveRatio <= 5000);
@@ -724,7 +729,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     /**
      * @dev Withdraw either a lost ERC20 token sent to the contract (expect the feeToken)
      * @param token ERC20 token to withdraw
-     * @param amount Amount to transfer
+     * @param amount Amount to transfer (in wei)
      */
     function withdrawERC20(address token, uint256 amount) external onlyOwner returns(bool) {
         require(_claimBlocked || token != address(feeToken), "Warden: cannot withdraw fee Token"); //We want to be able to recover the fees if there is an issue
