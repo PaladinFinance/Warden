@@ -16,6 +16,12 @@ Currently it only works with Delegation Boost made for CRV rewards on Curve Gaug
 Because the veBoost contract rounds down to the week the expire_time given to create a Boost, users buying a Boost through Warden could get less days of Boost than what they paid for. So it does not happen, when creating a Boost, the Warden contract will add 1 more week, if needed, to the expire_time parameter to create the Boost, creating some "bonus days" where the Boost will be active, but for which the buyer did not pay.  
 But the cancel_time of the created Boost will relfect the real duration paid for. After the paid duration of the Boost passed, any user can try to buy a Boost from the same delegator, the previous Boost could be canceled by Warden (if the Boost is cancelable) to make more veCRV available for the Boost.
 
+
+## Deployements
+
+Warden: 0x2e2f6aece0B7Caa7D3BfDFb2728F50b4e211F1eB  
+WardenLens: 0xe0be968a0D6Bba03720DfDB2F3d4b3ED0083b4c7  
+
 ## Dependencies & Installation
 
 

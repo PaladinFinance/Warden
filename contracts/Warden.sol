@@ -312,6 +312,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param percent Percent of the delegator balance to delegate (in BPS)
      * @param duration Duration (in weeks) of the Boost to purchase
      * @param maxFeeAmount Maximum amount of feeToken available to pay to cover the Boost Duration (in wei)
+     * returns the id of the new veBoost
      */
     function buyDelegationBoost(
         address delegator,
@@ -319,7 +320,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 percent,
         uint256 duration, //in weeks
         uint256 maxFeeAmount
-    ) external nonReentrant whenNotPaused returns(bool) {
+    ) external nonReentrant whenNotPaused returns(uint256) {
         require(
             delegator != address(0) && receiver != address(0),
             "Warden: Zero address"
@@ -429,7 +430,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             vars.expiryTime
         );
 
-        return true;
+        return vars.newTokenId;
     }
 
     /**
@@ -545,12 +546,17 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
         uint256 blockedBalance = (balance * (MAX_PCT - delegatorMaxPerc)) / MAX_PCT;
 
-        // Available Balance to delegate = VotingEscrow Balance - Delegated Balance - Blocked Balance
-        uint256 availableBalance = balance - delegationBoost.delegated_boost(delegator) - blockedBalance;
-        if (amount <= availableBalance) return true;
+        // Available Balance to delegate = VotingEscrow Balance - Blocked Balance
+        uint256 availableBalance = balance - blockedBalance;
+        // Then need to check what is the amount currently delegated out of the Available Balance
+        uint256 delegatedBalance = delegationBoost.delegated_boost(delegator);
+
+        if(availableBalance > delegatedBalance){
+            if(amount <= (availableBalance - delegatedBalance)) return true;
+        }
 
         // Check if cancel expired Boosts could bring enough to delegate
-        uint256 potentialBalance = availableBalance;
+        uint256 potentialCancelableBalance = 0;
 
         uint256 nbTokens = delegationBoost.total_minted(delegator);
         uint256[256] memory toCancel; //Need this type of array because of batch_cancel_boosts() from veBoost
@@ -566,15 +572,17 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             if (delegationBoost.token_cancel_time(tokenId) <= block.timestamp && delegationBoost.token_cancel_time(tokenId) != 0) {
                 int256 boost = delegationBoost.token_boost(tokenId);
                 uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
-                potentialBalance += absolute_boost;
+                potentialCancelableBalance += absolute_boost;
                 toCancel[nbToCancel] = tokenId;
                 nbToCancel++;
             }
         }
 
+        // If the current Boosts are more than the availableBalance => No balance available for a new Boost
+        if (availableBalance < (delegatedBalance - potentialCancelableBalance)) return false;
         // If canceling the tokens can free enough to delegate,
         // cancel the batch and return true
-        if (amount <= potentialBalance && nbToCancel > 0) {
+        if (amount <= (availableBalance - (delegatedBalance - potentialCancelableBalance)) && nbToCancel > 0) {
             delegationBoost.batch_cancel_boosts(toCancel);
             return true;
         }

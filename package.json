@@ -12,7 +12,8 @@
     "verify-merkle-root": "ts-node scripts/merkle/verify-merkle-root.ts --",
     "tenderly-fork": "npx hardhat run --network tenderly scripts/tenderly_scripts/tenderly_create_fork.ts",
     "tenderly-balance": "npx hardhat run --network tenderly scripts/tenderly_scripts/tenderly_balance.ts",
-    "tenderly-deploy": "npx hardhat run --network tenderly scripts/deploy/deploy_tenderly.ts"
+    "tenderly-deploy": "npx hardhat run --network tenderly scripts/deploy/deploy_tenderly.ts",
+    "deploy": "npx hardhat run --network mainnet"
   },
   "author": "",
   "license": "MIT",

@@ -52,7 +52,7 @@ contract WardenLens {
         uint256 minExpiryTime;
         uint256 balance;
         uint256 delegatedBalance;
-        uint256 potentialBalance;
+        uint256 potentialCancelableBalance;
         uint256 nbTokens;
     }
 
@@ -83,12 +83,15 @@ contract WardenLens {
         uint256 blockedBalance = (vars.balance * (MAX_PCT - delegatorMaxPerc)) /
             MAX_PCT;
 
-        // Available Balance to delegate = VotingEscrow Balance - Delegated Balance - Blocked Balance
-        uint256 availableBalance = vars.balance - vars.delegatedBalance - blockedBalance;
-        if (amount <= availableBalance) return true;
+        // Available Balance to delegate = VotingEscrow Balance - Blocked Balance
+        uint256 availableBalance = vars.balance - blockedBalance;
+        // Then need to check what is the amount currently delegated out of the Available Balance
+        if(availableBalance > vars.delegatedBalance){
+            if(amount <= (availableBalance - vars.delegatedBalance)) return true;
+        }
 
         // Check if cancel expired Boosts could bring enough to delegate
-        vars.potentialBalance = availableBalance;
+        vars.potentialCancelableBalance = 0;
 
         vars.nbTokens = delegationBoost.total_minted(delegator);
 
@@ -103,12 +106,14 @@ contract WardenLens {
             if (cancelTime < vars.currentTime) {
                 int256 boost = delegationBoost.token_boost(tokenId);
                 uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
-                vars.potentialBalance += absolute_boost;
+                vars.potentialCancelableBalance += absolute_boost;
             }
         }
 
+        // If the current Boosts are more than the availableBalance => No balance available for a new Boost
+        if (availableBalance < (vars.delegatedBalance - vars.potentialCancelableBalance)) return false;
         // If canceling the tokens can free enough to delegate
-        if (amount <= vars.potentialBalance) return true;
+        if (amount <= (availableBalance - (vars.delegatedBalance - vars.potentialCancelableBalance))) return true;
 
         return false;
     }
