@@ -3,6 +3,7 @@ pragma solidity ^0.8.4;
 
 import "./open-zeppelin/interfaces/IERC20.sol";
 import "./open-zeppelin/libraries/SafeERC20.sol";
+import "./open-zeppelin/utils/Ownable.sol";
 import "./Warden.sol";
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IVotingEscrowDelegation.sol";
@@ -18,7 +19,7 @@ import "./interfaces/IVotingEscrowDelegation.sol";
         - Buy by performing a quickSort over the Offers, to start with the cheapest ones (with the same parameters available)
  */
 /// @author Paladin
-contract WardenMultiBuy {
+contract WardenMultiBuy is Ownable {
     using SafeERC20 for IERC20;
 
     uint256 public constant UNIT = 1e18;
@@ -45,13 +46,16 @@ contract WardenMultiBuy {
 
 
     struct MultiBuyVars {
+        uint256 weeksDuration;
         uint256 boostDuration;
         uint256 totalNbOffers;
         uint256 boostEndTime;
         uint256 expiryTime;
-        uint256 missingAmount;
         uint256 previousBalance;
         uint256 endBalance;
+        uint256 missingAmount;
+        uint256 boughtAmount;
+        uint256 wardenMinRequiredPercent;
     }
 
     struct OfferVars {
@@ -59,8 +63,10 @@ contract WardenMultiBuy {
         uint256 toBuyAmount;
         address delegator;
         uint256 offerPrice;
+        uint256 offerminPercent;
         uint256 boostFeeAmount;
         uint256 boostPercent;
+        uint256 newTokenId;
     }
 
     function simpleMultiBuy(
@@ -68,19 +74,23 @@ contract WardenMultiBuy {
         uint256 duration,
         uint256 boostAmount,
         uint256 maxPrice,
+        uint256 minRequiredAmount, //minimum size of the Boost to buy, smaller will be skipped
         uint256 totalFeesAmount,
+        uint256 acceptableSlippage, //BPS
         bool clearExpired
     ) external returns (bool) {
         require(
             receiver != address(0),
             "Zero address"
         );
-        require(boostAmount != 0 && totalFeesAmount != 0, "Null value");
+        require(boostAmount != 0 && totalFeesAmount != 0 && acceptableSlippage != 0, "Null value");
+        require(maxPrice != 0, "Null price");
 
         MultiBuyVars memory vars;
 
         vars.boostDuration = duration * 1 weeks;
-        require(((boostAmount * maxPrice * vars.boostDuration) / UNIT) >= totalFeesAmount, "Not Enough Fees");
+        require(vars.boostDuration >= warden.minDelegationTime(), "Duration too short");
+        require(((boostAmount * maxPrice * vars.boostDuration) / UNIT) <= totalFeesAmount, "Not Enough Fees");
 
         vars.totalNbOffers = warden.offersIndex();
 
@@ -96,10 +106,13 @@ contract WardenMultiBuy {
         feeToken.safeTransferFrom(msg.sender, address(this), totalFeesAmount);
 
         //Set the approval to 0, then set it to totalFeesAmount (CRV : race condition)
-        feeToken.safeApprove(address(warden), 0);
+        if(feeToken.allowance(address(this), address(warden)) != 0) feeToken.safeApprove(address(warden), 0);
         feeToken.safeApprove(address(warden), totalFeesAmount);
 
         vars.missingAmount = boostAmount;
+        vars.boughtAmount = 0;
+
+        vars.wardenMinRequiredPercent = warden.minPercRequired();
 
         for (uint256 i = 1; i < vars.totalNbOffers; i++) { //since the offer at index 0 is useless
 
@@ -109,20 +122,27 @@ contract WardenMultiBuy {
 
             varsOffer.availableUserBalance = _availableAmount(i, maxPrice, vars.expiryTime, clearExpired);
             if (varsOffer.availableUserBalance == 0) continue; //Offer is not available or not in the required parameters
+            if (varsOffer.availableUserBalance < minRequiredAmount) continue; //Offer has an available amount smaller than the required minimum
 
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
 
-            (varsOffer.delegator, varsOffer.offerPrice,,) = warden.offers(i);
+            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerminPercent,) = warden.offers(i);
 
             varsOffer.boostFeeAmount = (varsOffer.toBuyAmount * varsOffer.offerPrice * vars.boostDuration) / UNIT;
 
             varsOffer.boostPercent = (varsOffer.toBuyAmount * MAX_PCT) / votingEscrow.balanceOf(varsOffer.delegator);
+            if(varsOffer.boostPercent < vars.wardenMinRequiredPercent || varsOffer.boostPercent < varsOffer.offerminPercent) continue; // Offer available percent is udner Warden's minimum required percent
 
-            require(warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, duration, varsOffer.boostFeeAmount), "Boost buy fail");
+            varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, duration, varsOffer.boostFeeAmount);
+
+            require(varsOffer.newTokenId != 0, "Boost buy fail");
 
             vars.missingAmount -= varsOffer.toBuyAmount;
-            
+            vars.boughtAmount += uint256(delegationBoost.token_boost(varsOffer.newTokenId));
         }
+
+        if(vars.boughtAmount < ((boostAmount * (MAX_PCT - acceptableSlippage)) / MAX_PCT)) 
+            revert('Cannot match Order');
 
         //Return all unused feeTokens to the Buyer
         vars.endBalance = feeToken.balanceOf(address(this));
@@ -137,16 +157,20 @@ contract WardenMultiBuy {
         uint256 duration,
         uint256 boostAmount,
         uint256 maxPrice,
+        uint256 minRequiredAmount, //minimum size of the Boost to buy, smaller will be skipped
         uint256 totalFeesAmount,
+        uint256 acceptableSlippage, //BPS
         bool clearExpired,
-        uint[] memory sortedOfferIndexes
+        uint256[] memory sortedOfferIndexes
     ) external returns (bool) {
         return _sortedMultiBuy(
         receiver,
         duration,
         boostAmount,
         maxPrice,
+        minRequiredAmount,
         totalFeesAmount,
+        acceptableSlippage,
         clearExpired,
         sortedOfferIndexes
         );
@@ -157,18 +181,22 @@ contract WardenMultiBuy {
         uint256 duration,
         uint256 boostAmount,
         uint256 maxPrice,
+        uint256 minRequiredAmount, //minimum size of the Boost to buy, smaller will be skipped
         uint256 totalFeesAmount,
+        uint256 acceptableSlippage, //BPS
         bool clearExpired
     ) external returns (bool) {
 
-        uint[] memory sortedOfferIndexes = _quickSortOffers();
+        uint256[] memory sortedOfferIndexes = _quickSortOffers();
 
         return _sortedMultiBuy(
         receiver,
         duration,
         boostAmount,
         maxPrice,
+        minRequiredAmount,
         totalFeesAmount,
+        acceptableSlippage,
         clearExpired,
         sortedOfferIndexes
         );
@@ -181,20 +209,26 @@ contract WardenMultiBuy {
         uint256 duration,
         uint256 boostAmount,
         uint256 maxPrice,
+        uint256 minRequiredAmount, //minimum size of the Boost to buy, smaller will be skipped
         uint256 totalFeesAmount,
+        uint256 acceptableSlippage, //BPS
         bool clearExpired,
-        uint[] memory sortedOfferIndexes
+        uint256[] memory sortedOfferIndexes
     ) internal returns(bool) {
         require(
             receiver != address(0),
             "Zero address"
         );
-        require(boostAmount != 0 && totalFeesAmount != 0, "Null value");
+        require(boostAmount != 0 && totalFeesAmount != 0 && acceptableSlippage != 0, "Null value");
+        require(maxPrice != 0, "Null price");
+
 
         MultiBuyVars memory vars;
 
         vars.boostDuration = duration * 1 weeks;
-        require(((boostAmount * maxPrice * vars.boostDuration) / UNIT) >= totalFeesAmount, "Not Enough Fees");
+        vars.weeksDuration = duration;
+        require(vars.boostDuration >= warden.minDelegationTime(), "Duration too short");
+        require(((boostAmount * maxPrice * vars.boostDuration) / UNIT) <= totalFeesAmount, "Not Enough Fees");
 
         require(sortedOfferIndexes.length != 0, "Empty Array");
 
@@ -210,37 +244,46 @@ contract WardenMultiBuy {
         feeToken.safeTransferFrom(msg.sender, address(this), totalFeesAmount);
 
         //Set the approval to 0, then set it to totalFeesAmount (CRV : race condition)
-        feeToken.safeApprove(address(warden), 0);
+        if(feeToken.allowance(address(this), address(warden)) != 0) feeToken.safeApprove(address(warden), 0);
         feeToken.safeApprove(address(warden), totalFeesAmount);
 
         vars.missingAmount = boostAmount;
+        vars.boughtAmount = 0;
 
-        uint maxOfferIndex = warden.offersIndex();
+        vars.wardenMinRequiredPercent = warden.minPercRequired();
 
-        for (uint256 i = 1; i < sortedOfferIndexes.length; i++) { //since the offer at index 0 is useless
+        for (uint256 i = 0; i < sortedOfferIndexes.length; i++) { //since the offer at index 0 is useless
 
-            require(i != 0 && i < maxOfferIndex, "BoostOffer does not exist");
+            require(sortedOfferIndexes[i] != 0 && sortedOfferIndexes[i] < warden.offersIndex(), "BoostOffer does not exist");
 
             if(vars.missingAmount == 0) break;
 
             OfferVars memory varsOffer;
 
-            varsOffer.availableUserBalance = _availableAmount(i, maxPrice, vars.expiryTime, clearExpired);
+            varsOffer.availableUserBalance = _availableAmount(sortedOfferIndexes[i], maxPrice, vars.expiryTime, clearExpired);
             if (varsOffer.availableUserBalance == 0) continue; //Offer is not available or not in the required parameters
+            if (varsOffer.availableUserBalance < minRequiredAmount) continue; //Offer has an available amount smaller than the required minimum
 
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
 
-            (varsOffer.delegator, varsOffer.offerPrice,,) = warden.offers(i);
+            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerminPercent,) = warden.offers(sortedOfferIndexes[i]);
 
             varsOffer.boostFeeAmount = (varsOffer.toBuyAmount * varsOffer.offerPrice * vars.boostDuration) / UNIT;
 
             varsOffer.boostPercent = (varsOffer.toBuyAmount * MAX_PCT) / votingEscrow.balanceOf(varsOffer.delegator);
+            if(varsOffer.boostPercent < vars.wardenMinRequiredPercent || varsOffer.boostPercent < varsOffer.offerminPercent) continue; // Offer available percent is udner Warden's minimum required percent
 
-            require(warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, duration, varsOffer.boostFeeAmount), "Boost buy fail");
+            varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, vars.weeksDuration, varsOffer.boostFeeAmount);
+
+            require(varsOffer.newTokenId != 0, "Boost buy fail");
 
             vars.missingAmount -= varsOffer.toBuyAmount;
+            vars.boughtAmount += uint256(delegationBoost.token_boost(varsOffer.newTokenId));
             
         }
+
+        if(vars.boughtAmount < ((boostAmount * (MAX_PCT - acceptableSlippage)) / MAX_PCT)) 
+            revert('Cannot match Order');
 
         //Return all unused feeTokens to the Buyer
         vars.endBalance = feeToken.balanceOf(address(this));
@@ -249,7 +292,7 @@ contract WardenMultiBuy {
         return true;
     }
 
-    function getSortedOffers() external returns(uint[] memory ) { //For tests
+    function getSortedOffers() external view returns(uint[] memory) { //For tests
         return _quickSortOffers();
     }
 
@@ -258,27 +301,27 @@ contract WardenMultiBuy {
         uint256 price;
     }
 
-    function _quickSortOffers() internal returns(uint[] memory){
+    function _quickSortOffers() internal view returns(uint[] memory){
         //Need to build up an array with values from 1 to OfferIndex    => Need to find a better way to do it
         //To then sort the offers by price
         uint256 totalNbOffers = warden.offersIndex();
 
-        OfferInfos[] memory offersList = new OfferInfos[](totalNbOffers);
-        for(uint256 i = 0; i < totalNbOffers - 1; i++){ //Because the 0 index is an empty Offer
+        OfferInfos[] memory offersList = new OfferInfos[](totalNbOffers - 1);
+        for(uint256 i = 0; i < offersList.length; i++){ //Because the 0 index is an empty Offer
             (offersList[i].user, offersList[i].price,,) = warden.offers(i + 1);
         }
 
         _quickSort(offersList, int(0), int(offersList.length - 1));
 
-        uint256[] memory sortedOffers = new uint256[](totalNbOffers);
-        for(uint256 i = 0; i < totalNbOffers; i++){ //Because the 0 index is an empty Offer
+        uint256[] memory sortedOffers = new uint256[](totalNbOffers - 1);
+        for(uint256 i = 0; i < offersList.length; i++){
             sortedOffers[i] = warden.userIndex(offersList[i].user);
         }
 
         return sortedOffers;
     }
 
-    function _quickSort(OfferInfos[] memory offersList, int left, int right) internal {
+    function _quickSort(OfferInfos[] memory offersList, int left, int right) internal view {
         int i = left;
         int j = right;
         if(i==j) return;
@@ -326,17 +369,25 @@ contract WardenMultiBuy {
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
         uint256 blockedBalance = (userBalance * (MAX_PCT - maxPerc)) / MAX_PCT;
 
-        // Available Balance to delegate = VotingEscrow Balance - Delegated Balance - Blocked Balance
-        uint256 availableBalance = userBalance - delegatedBalance - blockedBalance;
+        uint256 availableBalance = userBalance - blockedBalance;
 
         uint256 minBoostAmount = (userBalance * minPerc) / MAX_PCT;
 
-        if ((minBoostAmount > availableBalance) && !clearExpired) return 0;
+
+        if(!clearExpired) { //If we don't want to take Offer with Boost to clear (lesser gas cost)
+            if(availableBalance > delegatedBalance){
+                if(minBoostAmount > (availableBalance - delegatedBalance)) return 0;
+
+                return (availableBalance - delegatedBalance);
+            }
+
+            return 0;
+        }
 
         uint256 currentBoostsNumber = delegationBoost.total_minted(delegator);
-        if(clearExpired && (currentBoostsNumber > 0)){
+        uint256 potentialCancelableBalance = 0;
+        if(currentBoostsNumber > 0){
             uint256 currentTime = block.timestamp;
-            uint256 potentialBalance = availableBalance;
 
             // Loop over the delegator current boosts to find expired ones
             for (uint256 i = 0; i < currentBoostsNumber; i++) {
@@ -349,15 +400,26 @@ contract WardenMultiBuy {
                 if (cancelTime < currentTime) {
                     int256 boost = delegationBoost.token_boost(tokenId);
                     uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
-                    potentialBalance += absolute_boost;
+                    potentialCancelableBalance += absolute_boost;
                 }
             }
-
-            // If canceling the tokens can free enough to delegate
-            if (minBoostAmount > potentialBalance) return potentialBalance;
         }
 
-        return availableBalance;
+        // Cannot cancel enough Boosts amounts to reach free the account availableBalance
+        if (availableBalance < (delegatedBalance - potentialCancelableBalance)) return 0;
+        // If canceling the tokens can free enough to delegate
+        if (minBoostAmount <= (availableBalance - (delegatedBalance - potentialCancelableBalance))) {
+            return (availableBalance - (delegatedBalance - potentialCancelableBalance));
+        }
+
+        return 0; //fallback => not enough availableBalance to propose the minimum Boost Amount allowed
+
+    }
+
+    function recoverERC20(address token, uint256 amount) external onlyOwner returns(bool) {
+        IERC20(token).safeTransfer(owner(), amount);
+
+        return true;
     }
 
 }

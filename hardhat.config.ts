@@ -51,6 +51,9 @@ const config: HardhatUserConfig = {
       accounts: [process.env.MAINNET_PRIVATE_KEY || ''],
     }
   },
+  mocha: {
+    timeout: 0
+  },
   etherscan: {
     // Your API key for Etherscan
     // Obtain one at https://etherscan.io/
@@ -61,7 +64,7 @@ const config: HardhatUserConfig = {
     target: "ethers-v5"
   },
   gasReporter: {
-    enabled: false
+    enabled: true
   },
   tenderly: {
     project: process.env.TENDERLY_PROJECT || '',

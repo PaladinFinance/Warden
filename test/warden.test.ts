@@ -14,13 +14,8 @@ import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
 
 import {
-    getTimestamp,
-    setBlockTimestamp,
     advanceTime,
     getERC20,
-    stopAutoMine,
-    startAutoMine,
-    mineNextBlock
 } from "./utils/utils";
 
 const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VECRV_LOCKING_TIME } = require("./utils/constant");
