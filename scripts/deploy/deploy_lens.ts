@@ -17,11 +17,8 @@ const params_path = () => {
 const param_file_path = params_path();
 
 const {
-    FEE_TOKEN_ADDRESS,
     VOTING_ESCROW_ADDRESS,
     DELEGATION_BOOST_ADDRESS,
-    FEE_RATIO,
-    MIN_PERCENT_REQUIRED,
     WARDEN_ADDRESS
 } = require(param_file_path);
 
