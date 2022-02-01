@@ -106,7 +106,7 @@ contract WardenMultiBuy is Ownable {
      * @param receiver Address of the veBoosts receiver
      * @param duration Duration (in weeks) for the veBoosts to purchase
      * @param boostAmount Total Amount of veCRV boost to purchase
-     * @param maxPrice Maximum price for veBoost purchase, any Offer with a higher price will be skipped
+     * @param maxPrice Maximum price for veBoost purchase (price is in feeToken/second, in wei), any Offer with a higher price will be skipped
      * @param minRequiredAmount Minimum size of the Boost to buy, smaller will be skipped
      * @param totalFeesAmount Maximum total amount of feeToken available to pay to for veBoost purchases (in wei)
      * @param acceptableSlippage Maximum acceptable slippage for the total Boost amount purchased (in BPS)
@@ -223,7 +223,7 @@ contract WardenMultiBuy is Ownable {
      * @param receiver Address of the veBoosts receiver
      * @param duration Duration (in weeks) for the veBoosts to purchase
      * @param boostAmount Total Amount of veCRV boost to purchase
-     * @param maxPrice Maximum price for veBoost purchase, any Offer with a higher price will be skipped
+     * @param maxPrice Maximum price for veBoost purchase (price is in feeToken/second, in wei), any Offer with a higher price will be skipped
      * @param minRequiredAmount Minimum size of the Boost to buy, smaller will be skipped
      * @param totalFeesAmount Maximum total amount of feeToken available to pay to for veBoost purchases (in wei)
      * @param acceptableSlippage Maximum acceptable slippage for the total Boost amount purchased (in BPS)
@@ -260,7 +260,7 @@ contract WardenMultiBuy is Ownable {
      * @param receiver Address of the veBoosts receiver
      * @param duration Duration (in weeks) for the veBoosts to purchase
      * @param boostAmount Total Amount of veCRV boost to purchase
-     * @param maxPrice Maximum price for veBoost purchase, any Offer with a higher price will be skipped
+     * @param maxPrice Maximum price for veBoost purchase (price is in feeToken/second, in wei), any Offer with a higher price will be skipped
      * @param minRequiredAmount Minimum size of the Boost to buy, smaller will be skipped
      * @param totalFeesAmount Maximum total amount of feeToken available to pay to for veBoost purchases (in wei)
      * @param acceptableSlippage Maximum acceptable slippage for the total Boost amount purchased (in BPS)
