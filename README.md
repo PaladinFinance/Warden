@@ -21,6 +21,7 @@ But the cancel_time of the created Boost will relfect the real duration paid for
 
 Warden: 0x2e2f6aece0B7Caa7D3BfDFb2728F50b4e211F1eB  
 WardenLens: 0xe0be968a0D6Bba03720DfDB2F3d4b3ED0083b4c7  
+WardenMultiBuy: 0x0c0f5BDD0cFE5DC82885b89385B6708A8dc395F4  
 
 ## Dependencies & Installation
 

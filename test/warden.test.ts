@@ -61,8 +61,16 @@ describe('Warden contract tests', () => {
         await getERC20(admin, BIG_HOLDER, CRV, delegator.address, crv_amount);
 
         await CRV.connect(delegator).approve(veCRV.address, crv_amount);
+        const locked_balance = (await veCRV.locked(delegator.address)).amount
         const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
-        await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
+        if(locked_balance.eq(0)){
+            await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
+        } else if(locked_balance.lt(lock_amount)) {
+            await veCRV.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+            await veCRV.connect(delegator).increase_unlock_time(lock_time);
+        } else {
+            await veCRV.connect(delegator).increase_unlock_time(lock_time);
+        }
 
         await CRV.connect(delegator).transfer(receiver.address, crv_amount.sub(lock_amount));
 
