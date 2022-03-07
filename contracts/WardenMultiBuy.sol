@@ -90,6 +90,8 @@ contract WardenMultiBuy is Ownable {
         address delegator;
         // Price listed in the Offer
         uint256 offerPrice;
+        // Maximum duration for veBoost on this Offer
+        uint256 offerMaxDuration;
         // Minimum required percent for veBoost on this Offer
         uint256 offerminPercent;
         // Amount of fees to pay for the veBoost creation
@@ -184,7 +186,10 @@ contract WardenMultiBuy is Ownable {
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
 
             // Fetch the Offer data
-            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerminPercent,) = warden.offers(i);
+            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration, varsOffer.offerminPercent,) = warden.getOffer(i);
+
+            //If the asked duration is over the max duration for this offer, we skip
+            if(duration > varsOffer.offerMaxDuration) continue;
 
             // Calculate the amount of fees to pay for that Boost purchase
             varsOffer.boostFeeAmount = (varsOffer.toBuyAmount * varsOffer.offerPrice * vars.boostDuration) / UNIT;
@@ -372,7 +377,10 @@ contract WardenMultiBuy is Ownable {
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
 
             // Fetch the Offer data
-            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerminPercent,) = warden.offers(sortedOfferIndexes[i]);
+            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration, varsOffer.offerminPercent,) = warden.getOffer(sortedOfferIndexes[i]);
+
+            //If the asked duration is over the max duration for this offer, we skip
+            if(duration > varsOffer.offerMaxDuration) continue;
 
             // Calculate the amount of fees to pay for that Boost purchase
             varsOffer.boostFeeAmount = (varsOffer.toBuyAmount * varsOffer.offerPrice * vars.boostDuration) / UNIT;
@@ -424,7 +432,7 @@ contract WardenMultiBuy is Ownable {
         // Fetch all the Offers listed in Warden, in memory using the OfferInfos struct
         OfferInfos[] memory offersList = new OfferInfos[](totalNbOffers - 1);
         for(uint256 i = 0; i < offersList.length; i++){ //Because the 0 index is an empty Offer
-            (offersList[i].user, offersList[i].price,,) = warden.offers(i + 1);
+            (offersList[i].user, offersList[i].price,,,) = warden.getOffer(i + 1);
         }
 
         // Sort the list using the recursive method
@@ -471,9 +479,10 @@ contract WardenMultiBuy is Ownable {
         (
             address delegator,
             uint256 offerPrice,
+            ,
             uint256 minPerc,
             uint256 maxPerc
-        ) = warden.offers(offerIndex);
+        ) = warden.getOffer(offerIndex);
 
         // Price of the Offer is over the maxPrice given
         if (offerPrice > maxPrice) return 0;

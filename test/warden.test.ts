@@ -32,6 +32,7 @@ let wardenFactory: ContractFactory
 describe('Warden contract tests', () => {
     let admin: SignerWithAddress
     let reserveManager: SignerWithAddress
+    let priceManager: SignerWithAddress
     let delegator: SignerWithAddress
     let receiver: SignerWithAddress
     let externalUser: SignerWithAddress
@@ -44,8 +45,10 @@ describe('Warden contract tests', () => {
 
     const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
 
+    const base_advised_price = BigNumber.from(1.25 * 1e10)
+
     before(async () => {
-        [admin, reserveManager, delegator, receiver, externalUser] = await ethers.getSigners();
+        [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
@@ -84,7 +87,8 @@ describe('Warden contract tests', () => {
             veCRV.address,
             delegationBoost.address,
             500, //5%
-            1000 //10%
+            1000, //10%
+            base_advised_price
         )) as Warden;
         await warden.deployed();
 
@@ -123,6 +127,8 @@ describe('Warden contract tests', () => {
         expect(warden_offers_0.minPerc).to.be.eq(0);
         expect(warden_offers_0.maxPerc).to.be.eq(0);
 
+        expect(await warden.advisedPrice()).to.be.eq(base_advised_price);
+
     });
 
 
@@ -130,6 +136,8 @@ describe('Warden contract tests', () => {
 
         const min_perc = 2000
         const max_perc = 10000
+
+        const max_duration = 10
 
         const low_max_perc = 1500
 
@@ -140,7 +148,7 @@ describe('Warden contract tests', () => {
 
             const old_offersIndex = await warden.offersIndex();
 
-            const register_tx = await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            const register_tx = await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             await expect(register_tx)
                 .to.emit(warden, 'Registred')
@@ -151,6 +159,7 @@ describe('Warden contract tests', () => {
             const delegator_index = await warden.userIndex(delegator.address);
 
             const delegator_offer = await warden.offers(delegator_index);
+            const delegator_offer_data = await warden.getOffer(delegator_index);
 
             expect(new_offersIndex).to.be.eq(old_offersIndex.add(1));
 
@@ -158,27 +167,49 @@ describe('Warden contract tests', () => {
 
             expect(delegator_offer.user).to.be.eq(delegator.address);
             expect(delegator_offer.pricePerVote).to.be.eq(price_per_vote);
+            expect(delegator_offer.maxDuration).to.be.eq(max_duration);
             expect(delegator_offer.minPerc).to.be.eq(min_perc);
             expect(delegator_offer.maxPerc).to.be.eq(max_perc);
+
+            expect(delegator_offer_data.user).to.be.eq(delegator.address);
+            expect(delegator_offer_data.pricePerVote).to.be.eq(price_per_vote);
+            expect(delegator_offer_data.maxDuration).to.be.eq(max_duration);
+            expect(delegator_offer_data.minPerc).to.be.eq(min_perc);
+            expect(delegator_offer_data.maxPerc).to.be.eq(max_perc);
+
+        });
+
+        it(' should register and use the advised price', async () => {
+
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, true);
+
+            const delegator_index = await warden.userIndex(delegator.address);
+            const delegator_offer_data = await warden.getOffer(delegator_index);
+
+            expect(delegator_offer_data.pricePerVote).to.be.eq(base_advised_price);
 
         });
 
         it(' should fail if parameters are invalid', async () => {
 
             await expect(
-                warden.connect(delegator).register(0, min_perc, max_perc)
+                warden.connect(delegator).register(0, max_duration, min_perc, max_perc, false)
             ).to.be.revertedWith('Warden: Price cannot be 0')
 
             await expect(
-                warden.connect(delegator).register(price_per_vote, min_perc, low_max_perc)
+                warden.connect(delegator).register(price_per_vote, max_duration, min_perc, low_max_perc, false)
             ).to.be.revertedWith('Warden: minPerc is over maxPerc')
 
             await expect(
-                warden.connect(delegator).register(price_per_vote, min_perc, incorrect_max_perc)
+                warden.connect(delegator).register(price_per_vote, 0, min_perc, max_perc, false)
+            ).to.be.revertedWith('Warden: MaxDuration cannot be 0')
+
+            await expect(
+                warden.connect(delegator).register(price_per_vote, max_duration, min_perc, incorrect_max_perc, false)
             ).to.be.revertedWith('Warden: maxPerc too high')
 
             await expect(
-                warden.connect(delegator).register(price_per_vote, incorrect_min_perc, max_perc)
+                warden.connect(delegator).register(price_per_vote, max_duration, incorrect_min_perc, max_perc, false)
             ).to.be.revertedWith('Warden: minPerc too low')
 
         });
@@ -188,17 +219,17 @@ describe('Warden contract tests', () => {
             await delegationBoost.connect(delegator).setApprovalForAll(warden.address, false)
 
             await expect(
-                warden.connect(delegator).register(price_per_vote, min_perc, max_perc)
+                warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false)
             ).to.be.revertedWith('Warden: Not operator for caller')
 
         });
 
         it(' should fail if delegator is already registered', async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc)
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false)
 
             await expect(
-                warden.connect(delegator).register(price_per_vote, min_perc, max_perc)
+                warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false)
             ).to.be.revertedWith('Warden: Already registered')
 
         });
@@ -211,8 +242,12 @@ describe('Warden contract tests', () => {
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         const new_min_perc = 1500
         const new_max_perc = 8000
+
+        const new_max_duration = 8
 
         const new_price_per_vote = price_per_vote.div(2)
 
@@ -223,13 +258,13 @@ describe('Warden contract tests', () => {
 
         beforeEach(async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
         });
 
         it(' should update the delegator BoostOffer correctly', async () => {
 
-            const update_tx = await warden.connect(delegator).updateOffer(new_price_per_vote, new_min_perc, new_max_perc)
+            const update_tx = await warden.connect(delegator).updateOffer(new_price_per_vote, new_max_duration, new_min_perc, new_max_perc, false)
 
             await expect(update_tx)
                 .to.emit(warden, 'UpdateOffer')
@@ -238,32 +273,55 @@ describe('Warden contract tests', () => {
             const delegator_index = await warden.userIndex(delegator.address);
 
             const delegator_offer = await warden.offers(delegator_index);
+            const delegator_offer_data = await warden.getOffer(delegator_index);
 
             expect(delegator_index).not.to.be.eq(0);
 
             expect(delegator_offer.user).to.be.eq(delegator.address);
             expect(delegator_offer.pricePerVote).to.be.eq(new_price_per_vote);
+            expect(delegator_offer.maxDuration).to.be.eq(new_max_duration);
             expect(delegator_offer.minPerc).to.be.eq(new_min_perc);
             expect(delegator_offer.maxPerc).to.be.eq(new_max_perc);
+
+            expect(delegator_offer_data.user).to.be.eq(delegator.address);
+            expect(delegator_offer_data.pricePerVote).to.be.eq(new_price_per_vote);
+            expect(delegator_offer_data.maxDuration).to.be.eq(new_max_duration);
+            expect(delegator_offer_data.minPerc).to.be.eq(new_min_perc);
+            expect(delegator_offer_data.maxPerc).to.be.eq(new_max_perc);
+
+        });
+
+        it(' should update and use the advised price', async () => {
+
+            await warden.connect(delegator).updateOffer(new_price_per_vote, new_max_duration, new_min_perc, new_max_perc, true)
+
+            const delegator_index = await warden.userIndex(delegator.address);
+            const delegator_offer_data = await warden.getOffer(delegator_index);
+
+            expect(delegator_offer_data.pricePerVote).to.be.eq(base_advised_price);
 
         });
 
         it(' should fail if parameters are invalid', async () => {
 
             await expect(
-                warden.connect(delegator).updateOffer(0, new_min_perc, new_max_perc)
+                warden.connect(delegator).updateOffer(0, max_duration, new_min_perc, new_max_perc, false)
             ).to.be.revertedWith('Warden: Price cannot be 0')
 
             await expect(
-                warden.connect(delegator).updateOffer(price_per_vote, new_min_perc, low_max_perc)
+                warden.connect(delegator).updateOffer(price_per_vote, 0, new_min_perc, new_max_perc, false)
+            ).to.be.revertedWith('Warden: MaxDuration cannot be 0')
+
+            await expect(
+                warden.connect(delegator).updateOffer(price_per_vote, max_duration, new_min_perc, low_max_perc, false)
             ).to.be.revertedWith('Warden: minPerc is over maxPerc')
 
             await expect(
-                warden.connect(delegator).updateOffer(price_per_vote, new_min_perc, incorrect_max_perc)
+                warden.connect(delegator).updateOffer(price_per_vote, max_duration, new_min_perc, incorrect_max_perc, false)
             ).to.be.revertedWith('Warden: maxPerc too high')
 
             await expect(
-                warden.connect(delegator).updateOffer(price_per_vote, incorrect_min_perc, new_max_perc)
+                warden.connect(delegator).updateOffer(price_per_vote, max_duration, incorrect_min_perc, new_max_perc, false)
             ).to.be.revertedWith('Warden: minPerc too low')
 
         });
@@ -271,7 +329,79 @@ describe('Warden contract tests', () => {
         it(' should fail if user is not registered yet', async () => {
 
             await expect(
-                warden.connect(externalUser).updateOffer(new_price_per_vote, new_min_perc, new_max_perc)
+                warden.connect(externalUser).updateOffer(new_price_per_vote, max_duration, new_min_perc, new_max_perc, false)
+            ).to.be.revertedWith('Warden: Not registered')
+
+        });
+
+    });
+
+
+    describe('updateOfferPrice', async () => {
+
+        const min_perc = 2000
+        const max_perc = 10000
+
+        const max_duration = 10
+
+        const new_price_per_vote = price_per_vote.div(2)
+
+        beforeEach(async () => {
+
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+
+        });
+
+        it(' should update the delegator BoostOffer price correctly', async () => {
+
+            const update_tx = await warden.connect(delegator).updateOfferPrice(new_price_per_vote,  false)
+
+            await expect(update_tx)
+                .to.emit(warden, 'UpdateOfferPrice')
+                .withArgs(delegator.address, new_price_per_vote);
+
+            const delegator_index = await warden.userIndex(delegator.address);
+
+            const delegator_offer = await warden.offers(delegator_index);
+            const delegator_offer_data = await warden.getOffer(delegator_index);
+
+            expect(delegator_index).not.to.be.eq(0);
+
+            expect(delegator_offer.user).to.be.eq(delegator.address);
+            expect(delegator_offer.pricePerVote).to.be.eq(new_price_per_vote);
+
+            expect(delegator_offer_data.user).to.be.eq(delegator.address);
+            expect(delegator_offer_data.pricePerVote).to.be.eq(new_price_per_vote);
+
+        });
+
+        it(' should update and use the advised price', async () => {
+
+            const update_tx = await warden.connect(delegator).updateOfferPrice(new_price_per_vote, true)
+
+            await expect(update_tx)
+                .to.emit(warden, 'UpdateOfferPrice')
+                .withArgs(delegator.address, base_advised_price);
+
+            const delegator_index = await warden.userIndex(delegator.address);
+            const delegator_offer_data = await warden.getOffer(delegator_index);
+
+            expect(delegator_offer_data.pricePerVote).to.be.eq(base_advised_price);
+
+        });
+
+        it(' should fail if parameters are invalid', async () => {
+
+            await expect(
+                warden.connect(delegator).updateOfferPrice(0, false)
+            ).to.be.revertedWith('Warden: Price cannot be 0')
+
+        });
+
+        it(' should fail if user is not registered yet', async () => {
+
+            await expect(
+                warden.connect(externalUser).updateOfferPrice(new_price_per_vote, false)
             ).to.be.revertedWith('Warden: Not registered')
 
         });
@@ -284,9 +414,11 @@ describe('Warden contract tests', () => {
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         beforeEach(async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
         });
 
@@ -304,7 +436,7 @@ describe('Warden contract tests', () => {
 
             const delegator_index = await warden.userIndex(delegator.address);
 
-            const delegator_offer = await warden.offers(delegator_index);
+            const delegator_offer = await warden.getOffer(delegator_index);
 
             expect(new_offersIndex).to.be.eq(old_offersIndex.sub(1));
 
@@ -320,11 +452,11 @@ describe('Warden contract tests', () => {
         it(' should change other users Boost index if was not last of the list', async () => {
 
             await delegationBoost.connect(externalUser).setApprovalForAll(warden.address, true);
-            await warden.connect(externalUser).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(externalUser).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             const old_delegator_index = await warden.userIndex(delegator.address);
             const old_externalUser_index = await warden.userIndex(externalUser.address);
-            const externalUser_offer_before = await warden.offers(old_externalUser_index);
+            const externalUser_offer_before = await warden.getOffer(old_externalUser_index);
 
             await warden.connect(delegator).quit()
 
@@ -385,9 +517,12 @@ describe('Warden contract tests', () => {
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         const wanted_perc = 5000
         const wanted_duration = 1 //weeks
 
+        const over_max_duration = 15
         const incorrect_min_perc = 1500
         const incorrect_max_perc = 8000
         const under_required_min_perc = 500
@@ -396,7 +531,7 @@ describe('Warden contract tests', () => {
 
         beforeEach(async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
         });
 
@@ -414,6 +549,22 @@ describe('Warden contract tests', () => {
 
         });
 
+        it(' should return an estimated price using the advised price', async () => {
+
+            await warden.connect(delegator).updateOfferPrice(price_per_vote, true);
+
+            const estimated_amount = await warden.connect(receiver).estimateFees(
+                delegator.address,
+                wanted_perc,
+                wanted_duration
+            )
+
+            //Since veCRV has deteriorating balance, we look for an amount between 2 bounds
+            expect(estimated_amount).to.be.gte(ethers.utils.parseEther('3.5'))
+            expect(estimated_amount).to.be.lte(ethers.utils.parseEther('3.8'))
+
+        });
+
         it(' should fail if given incorrect parameters', async () => {
 
             await expect(
@@ -423,6 +574,10 @@ describe('Warden contract tests', () => {
             await expect(
                 warden.connect(receiver).estimateFees(externalUser.address, wanted_perc, wanted_duration)
             ).to.be.revertedWith('Warden: Not registered')
+
+            await expect(
+                warden.connect(receiver).estimateFees(delegator.address, wanted_perc, over_max_duration)
+            ).to.be.revertedWith('Warden: duration over Offer max')
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, under_required_min_perc, wanted_duration)
@@ -440,7 +595,7 @@ describe('Warden contract tests', () => {
 
         it(' should fail if parameters do not match delegator Offer', async () => {
 
-            await warden.connect(delegator).updateOffer(price_per_vote, min_perc, 7500)
+            await warden.connect(delegator).updateOffer(price_per_vote, max_duration, min_perc, 7500, false)
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, incorrect_min_perc, wanted_duration)
@@ -460,6 +615,8 @@ describe('Warden contract tests', () => {
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         const buy_percent = 5000
 
         let fee_amount: BigNumber;
@@ -474,12 +631,13 @@ describe('Warden contract tests', () => {
 
         const duration = 2
         const wrong_duration = 0
+        const over_max_duration = 15
 
         const one_week = 7 * 86400;
 
         beforeEach(async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
@@ -542,6 +700,65 @@ describe('Warden contract tests', () => {
 
         });
 
+        it(' should create a Boost using the advised price', async () => {
+
+            await warden.connect(delegator).updateOfferPrice(price_per_vote, true);
+
+            const fee_amount_advisedPrice = await warden.estimateFees(delegator.address, buy_percent, duration)
+
+            const old_balance = await CRV.balanceOf(receiver.address)
+
+            const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount_advisedPrice)
+
+            const new_balance = await CRV.balanceOf(receiver.address)
+
+            const token_id = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            const tx_timestamp = (await ethers.provider.getBlock((await buy_tx).blockNumber || 0)).timestamp
+
+            const boost_expire_time = await delegationBoost.token_expiry(token_id)
+            const boost_cancel_time = await delegationBoost.token_cancel_time(token_id)
+
+            const paidFees = old_balance.sub(new_balance)
+
+            await expect(buy_tx)
+                .to.emit(warden, 'BoostPurchase')
+                .withArgs(
+                    delegator.address,
+                    receiver.address,
+                    token_id,
+                    buy_percent,
+                    base_advised_price,
+                    paidFees,
+                    boost_expire_time
+                );
+
+            expect(paidFees).to.be.lt(fee_amount_advisedPrice)
+
+            const tx_block = (await buy_tx).blockNumber
+
+            const boost_amount = await delegationBoost.token_boost(token_id, { blockTag: tx_block })
+
+            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
+            const veCRV_balance_delegator = await veCRV.balanceOf(delegator.address, { blockTag: tx_block })
+            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            const veCRV_adjusted_delegator = await delegationBoost.adjusted_balance_of(delegator.address, { blockTag: tx_block })
+
+            expect(boost_amount).not.to.be.eq(0)
+            expect(boost_expire_time).to.be.gte(tx_timestamp + (duration * one_week)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
+            expect(boost_cancel_time).to.be.eq(tx_timestamp + (duration * one_week))
+
+            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(boost_amount))
+            expect(veCRV_adjusted_delegator).to.be.eq(veCRV_balance_delegator.sub(boost_amount))
+
+            // Cancel Boost by receiver (so delegator is available for later tests)
+            await delegationBoost.connect(receiver).cancel_boost(token_id)
+
+        });
+
         it(' should fail if given 0x000...000 as parameter', async () => {
 
             await expect(
@@ -576,7 +793,7 @@ describe('Warden contract tests', () => {
 
         it(' should fail if asked percent does not match Offer', async () => {
 
-            await warden.connect(delegator).updateOffer(price_per_vote, min_perc, updated_max_perc);
+            await warden.connect(delegator).updateOffer(price_per_vote, max_duration, min_perc, updated_max_perc, false);
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, wrong_min_perc, duration, fee_amount)
@@ -585,6 +802,14 @@ describe('Warden contract tests', () => {
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, wrong_max_perc, duration, fee_amount)
             ).to.be.revertedWith('Warden: Percent out of Offer bounds')
+
+        });
+
+        it(' should fail if asked duration is over the Offer maximum', async () => {
+
+            await expect(
+                warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, over_max_duration, fee_amount)
+            ).to.be.revertedWith('Warden: duration over Offer max')
 
         });
 
@@ -638,7 +863,7 @@ describe('Warden contract tests', () => {
 
         it(' should fail if 1 Boost already bought and 2nd Boost percent is out of delegator Offer', async () => {
 
-            await warden.connect(delegator).updateOffer(price_per_vote, min_perc, updated_max_perc);
+            await warden.connect(delegator).updateOffer(price_per_vote, max_duration, min_perc, updated_max_perc, false);
 
             await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount)
 
@@ -746,14 +971,17 @@ describe('Warden contract tests', () => {
 
     });
 
+
     describe('cancelDelegationBoost', async () => {
 
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         beforeEach(async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             const fee_amount = ethers.utils.parseEther('50');
 
@@ -888,9 +1116,11 @@ describe('Warden contract tests', () => {
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         beforeEach(async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             const fee_amount = ethers.utils.parseEther('50');
 
@@ -971,11 +1201,13 @@ describe('Warden contract tests', () => {
         const min_perc = 2000
         const max_perc = 10000
 
+        const max_duration = 10
+
         const fee_amount = ethers.utils.parseEther('100');
 
         it(' should claim the earned amount, and cancel finished Boosts', async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             await CRV.connect(receiver).approve(warden.address, fee_amount)
             await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 2, fee_amount);
@@ -1019,7 +1251,7 @@ describe('Warden contract tests', () => {
 
         it(' should claim the earned amount, and cancel finished Boosts, and allow new BoostPurchase', async () => {
 
-            await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
             await CRV.connect(receiver).transfer(externalUser.address, fee_amount);
 
             await CRV.connect(receiver).approve(warden.address, fee_amount)
@@ -1102,6 +1334,118 @@ describe('Warden contract tests', () => {
     });
 
 
+    describe('setAdvisedPrice', async () => {
+
+        const min_perc = 2000
+        const max_perc = 10000
+
+        const max_duration = 10
+
+        const new_base_price = BigNumber.from(2.5 * 1e10)
+
+        beforeEach(async () => {
+
+            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+
+            await warden.connect(admin).approveManager(priceManager.address)
+
+        });
+
+        it(' should update the advised price correctly (& emit the correct Event)', async () => {
+
+            const update_tx = await warden.connect(priceManager).setAdvisedPrice(new_base_price)
+
+            await expect(update_tx)
+                .to.emit(warden, 'NewAdvisedPrice')
+                .withArgs(new_base_price);
+
+            expect(await warden.advisedPrice()).to.be.eq(new_base_price)
+
+        });
+
+        it(' should update the advised price used by users', async () => {
+
+            await warden.connect(delegator).updateOfferPrice(price_per_vote, true);
+
+            await warden.connect(priceManager).setAdvisedPrice(new_base_price)
+
+            const delegator_offer_data = await warden.getOffer(await warden.userIndex(delegator.address));
+
+            expect(delegator_offer_data.pricePerVote).to.be.eq(new_base_price);
+
+        });
+
+        it(' should use the new basePrice for Offers with default price', async () => {
+
+            const buy_percent = 5000
+
+            const duration = 2
+
+            await warden.connect(delegator).updateOfferPrice(price_per_vote, true);
+
+            await warden.connect(priceManager).setAdvisedPrice(new_base_price)
+
+            const fee_amount_advisedPrice = await warden.estimateFees(delegator.address, buy_percent, duration)
+
+            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+
+            const old_balance = await CRV.balanceOf(receiver.address)
+
+            const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount_advisedPrice)
+
+            const new_balance = await CRV.balanceOf(receiver.address)
+
+            const token_id = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            const boost_expire_time = await delegationBoost.token_expiry(token_id)
+
+            const paidFees = old_balance.sub(new_balance)
+
+            await expect(buy_tx)
+                .to.emit(warden, 'BoostPurchase')
+                .withArgs(
+                    delegator.address,
+                    receiver.address,
+                    token_id,
+                    buy_percent,
+                    new_base_price,
+                    paidFees,
+                    boost_expire_time
+                );
+
+            expect(paidFees).to.be.lt(fee_amount_advisedPrice)
+
+            // Cancel Boost by receiver (so delegator is available for later tests)
+            await delegationBoost.connect(receiver).cancel_boost(token_id)
+
+        });
+
+        it(' should fail if given price 0', async () => {
+
+            await expect(
+                warden.connect(priceManager).setAdvisedPrice(0)
+            ).to.be.revertedWith('Warden: Null value')
+
+        });
+
+        it(' should only be callable by allowed managers', async () => {
+
+            await expect(
+                warden.connect(delegator).setAdvisedPrice(new_base_price)
+            ).to.be.revertedWith('Warden: Caller not allowed')
+    
+            await expect(
+                warden.connect(externalUser).setAdvisedPrice(new_base_price)
+            ).to.be.revertedWith('Warden: Caller not allowed')
+
+        });
+
+    })
+
+
     describe('Admin functions', async () => {
 
         describe('pause', async () => {
@@ -1111,7 +1455,7 @@ describe('Warden contract tests', () => {
                 await warden.connect(admin).pause();
 
                 await expect(
-                    warden.connect(delegator).register(price_per_vote, 2000, 10000)
+                    warden.connect(delegator).register(price_per_vote, 10, 2000, 10000, false)
                 ).to.be.reverted
 
             });
@@ -1135,7 +1479,7 @@ describe('Warden contract tests', () => {
                 await warden.connect(admin).unpause();
 
                 await expect(
-                    warden.connect(delegator).register(price_per_vote, 2000, 10000)
+                    warden.connect(delegator).register(price_per_vote, 10, 2000, 10000, false)
                 ).not.to.be.reverted
 
             });
@@ -1150,14 +1494,94 @@ describe('Warden contract tests', () => {
 
         });
 
+        describe('approveManager', async () => {
+
+            it(' should allow the added address as manager', async () => {
+    
+                await expect(
+                    warden.connect(priceManager).setAdvisedPrice(50)
+                ).to.be.revertedWith('Warden: Caller not allowed')
+    
+                await warden.connect(admin).approveManager(priceManager.address)
+    
+                await expect(
+                    warden.connect(priceManager).setAdvisedPrice(50)
+                ).to.not.be.reverted
+    
+            });
+    
+            it(' should only be allowed for admin', async () => {
+    
+                await expect(
+                    warden.connect(priceManager).approveManager(priceManager.address)
+                ).to.be.revertedWith('Ownable: caller is not the owner')
+    
+                await expect(
+                    warden.connect(reserveManager).approveManager(reserveManager.address)
+                ).to.be.revertedWith('Ownable: caller is not the owner')
+    
+            });
+    
+        });
+    
+    
+        describe('removeManager', async () => {
+    
+            beforeEach(async () => {
+    
+                await warden.connect(admin).approveManager(priceManager.address)
+                await warden.connect(admin).approveManager(externalUser.address)
+    
+            });
+    
+            it(' should remove the address as manager', async () => {
+    
+                await expect(
+                    warden.connect(priceManager).setAdvisedPrice(50)
+                ).to.not.be.reverted
+    
+                await warden.connect(admin).removeManager(priceManager.address)
+    
+                await expect(
+                    warden.connect(priceManager).setAdvisedPrice(50)
+                ).to.be.revertedWith('Warden: Caller not allowed')
+    
+            });
+    
+            it(' should not remove other managers', async () => {
+    
+                await warden.connect(admin).removeManager(priceManager.address)
+    
+                await expect(
+                    warden.connect(externalUser).setAdvisedPrice(50)
+                ).to.not.be.reverted
+    
+            });
+    
+            it(' should only be allowed for admin', async () => {
+    
+                await expect(
+                    warden.connect(priceManager).removeManager(priceManager.address)
+                ).to.be.revertedWith('Ownable: caller is not the owner')
+    
+                await expect(
+                    warden.connect(externalUser).removeManager(externalUser.address)
+                ).to.be.revertedWith('Ownable: caller is not the owner')
+    
+            });
+    
+        });
+
         describe('blockClaim / unblockClaim', async () => {
 
             const min_perc = 2000
             const max_perc = 10000
 
+            const max_duration = 10
+
             beforeEach(async () => {
 
-                await warden.connect(delegator).register(price_per_vote, min_perc, max_perc);
+                await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
                 const fee_amount = ethers.utils.parseEther('50');
 
@@ -1354,7 +1778,7 @@ describe('Warden contract tests', () => {
 
                 //create a boost
                 await CRV.connect(receiver).approve(warden.address, fee_amount)
-                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(delegator).register(price_per_vote, 10, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
 
                 //cancel the current Boost (from the receiver)
@@ -1376,7 +1800,7 @@ describe('Warden contract tests', () => {
 
                 //create a boost
                 await CRV.connect(receiver).approve(warden.address, fee_amount)
-                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(delegator).register(price_per_vote, 10, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
 
                 //cancel the current Boost (from the receiver)
@@ -1466,7 +1890,7 @@ describe('Warden contract tests', () => {
 
                 //create a boost
                 await CRV.connect(receiver).approve(warden.address, fee_amount)
-                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(delegator).register(price_per_vote, 10, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
 
                 //cancel the current Boost (from the receiver)
@@ -1499,7 +1923,7 @@ describe('Warden contract tests', () => {
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 await CRV.connect(receiver).approve(warden.address, fee_amount)
-                await warden.connect(delegator).register(price_per_vote, 1000, 10000);
+                await warden.connect(delegator).register(price_per_vote, 10, 1000, 10000, false);
                 await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
 
                 //cancel the current Boost (from the receiver)

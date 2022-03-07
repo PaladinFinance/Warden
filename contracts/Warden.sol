@@ -35,10 +35,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address user;
         // Price per vote per second, set by the user
         uint256 pricePerVote;
+        // Max duration a Boost from this offer can last
+        uint64 maxDuration;
         // Minimum percent of users voting token balance to buy for a Boost
         uint16 minPerc; //bps
         // Maximum percent of users total voting token balance available to delegate
         uint16 maxPerc; //bps
+        // Use the advised price instead of the Offer one
+        bool useAdvicePrice;
     }
 
     /** @notice ERC20 used to pay for DelegationBoost */
@@ -72,11 +76,16 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     bool private _claimBlocked;
 
+    uint256 public advisedPrice;
+
+    mapping(address => bool) public approvedManagers;
+
     // Events :
 
     event Registred(address indexed user, uint256 price);
 
     event UpdateOffer(address indexed user, uint256 newPrice);
+    event UpdateOfferPrice(address indexed user, uint256 newPrice);
 
     event Quit(address indexed user);
 
@@ -91,6 +100,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     );
 
     event Claim(address indexed user, uint256 amount);
+
+    event NewAdvisedPrice(uint256 newPrice);
+
 
     modifier onlyAllowed(){
         require(msg.sender == reserveManager || msg.sender == owner(), "Warden: Not allowed");
@@ -111,11 +123,15 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address _votingEscrow,
         address _delegationBoost,
         uint256 _feeReserveRatio, //bps
-        uint256 _minPercRequired //bps
+        uint256 _minPercRequired, //bps
+        uint256 _advisedPrice
     ) {
         feeToken = IERC20(_feeToken);
         votingEscrow = IVotingEscrow(_votingEscrow);
         delegationBoost = IVotingEscrowDelegation(_delegationBoost);
+
+        require(_advisedPrice > 0);
+        advisedPrice = _advisedPrice;
 
         require(_feeReserveRatio <= 5000);
         require(_minPercRequired > 0 && _minPercRequired <= 10000);
@@ -124,7 +140,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         // fill index 0 in the offers array
         // since we want to use index 0 for unregistered users
-        offers.push(BoostOffer(address(0), 0, 0, 0));
+        offers.push(BoostOffer(address(0), 0, 0, 0, 0, false));
     }
 
     // Functions :
@@ -142,8 +158,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function register(
         uint256 pricePerVote,
+        uint64 maxDuration,
         uint16 minPerc,
-        uint16 maxPerc
+        uint16 maxPerc,
+        bool useAdvicePrice
     ) external whenNotPaused returns(bool) {
         address user = msg.sender;
         require(userIndex[user] == 0, "Warden: Already registered");
@@ -156,10 +174,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(maxPerc <= 10000, "Warden: maxPerc too high");
         require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
         require(minPerc >= minPercRequired, "Warden: minPerc too low");
+        require(maxDuration > 0, "Warden: MaxDuration cannot be 0");
 
         // Create the BoostOffer for the new user, and add it to the storage
         userIndex[user] = offers.length;
-        offers.push(BoostOffer(user, pricePerVote, minPerc, maxPerc));
+        offers.push(BoostOffer(user, pricePerVote, maxDuration, minPerc, maxPerc, useAdvicePrice));
 
         emit Registred(user, pricePerVote);
 
@@ -175,8 +194,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function updateOffer(
         uint256 pricePerVote,
+        uint64 maxDuration,
         uint16 minPerc,
-        uint16 maxPerc
+        uint16 maxPerc,
+        bool useAdvicePrice
     ) external whenNotPaused returns(bool) {
         // Fet the user index, and check for registration
         address user = msg.sender;
@@ -192,15 +213,60 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         require(maxPerc <= 10000, "Warden: maxPerc too high");
         require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
         require(minPerc >= minPercRequired, "Warden: minPerc too low");
+        require(maxDuration > 0, "Warden: MaxDuration cannot be 0");
 
         // Update the parameters
         offer.pricePerVote = pricePerVote;
+        offer.maxDuration = maxDuration;
         offer.minPerc = minPerc;
         offer.maxPerc = maxPerc;
+        offer.useAdvicePrice = useAdvicePrice;
 
-        emit UpdateOffer(user, pricePerVote);
+        emit UpdateOffer(user, useAdvicePrice ? advisedPrice : pricePerVote);
 
         return true;
+    }
+
+    function updateOfferPrice(
+        uint256 pricePerVote,
+        bool useAdvicePrice
+    ) external whenNotPaused returns(bool) {
+        // Fet the user index, and check for registration
+        address user = msg.sender;
+        uint256 index = userIndex[user];
+        require(index != 0, "Warden: Not registered");
+
+        // Fetch the BoostOffer to update
+        BoostOffer storage offer = offers[index];
+
+        require(offer.user == msg.sender, "Warden: Not offer owner");
+
+        require(pricePerVote > 0, "Warden: Price cannot be 0");
+
+        // Update the parameters
+        offer.pricePerVote = pricePerVote;
+        offer.useAdvicePrice = useAdvicePrice;
+
+        emit UpdateOfferPrice(user, useAdvicePrice ? advisedPrice : pricePerVote);
+
+        return true;
+    }
+
+    function getOffer(uint256 index) external view returns(
+        address user,
+        uint256 pricePerVote,
+        uint64 maxDuration,
+        uint16 minPerc,
+        uint16 maxPerc
+    ) {
+        BoostOffer storage offer = offers[index];
+        return(
+            offer.user,
+            offer.useAdvicePrice ? advisedPrice : offer.pricePerVote,
+            offer.maxDuration,
+            offer.minPerc,
+            offer.maxPerc
+        );
     }
 
     /**
@@ -255,15 +321,17 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         );
         require(percent <= MAX_PCT, "Warden: Percent over 100");
 
+        // Fetch the BoostOffer for the delegator
+        BoostOffer storage offer = offers[userIndex[delegator]];
+
+        //Check that the duration is less or equal to Offer maxDuration
+        require(duration <= offer.maxDuration, "Warden: duration over Offer max");
         // Get the duration in seconds, and check it's more than the minimum required
         uint256 durationSeconds = duration * 1 weeks;
         require(
             durationSeconds >= minDelegationTime,
             "Warden: Duration too short"
         );
-
-        // Fetch the BoostOffer for the delegator
-        BoostOffer storage offer = offers[userIndex[delegator]];
 
         require(
             percent >= offer.minPerc && percent <= offer.maxPerc,
@@ -282,8 +350,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 delegatorBalance = votingEscrow.balanceOf(delegator);
         uint256 toDelegateAmount = (delegatorBalance * percent) / MAX_PCT;
 
+        //Should we use the Offer price or the advised one
+        uint256 pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
+
         // Get the price for the whole Amount (price fer second)
-        uint256 priceForAmount = (toDelegateAmount * offer.pricePerVote) / UNIT;
+        uint256 priceForAmount = (toDelegateAmount * pricePerVote) / UNIT;
 
         // Then multiply it by the duration (in seconds) to get the cost of the Boost
         return priceForAmount * durationSeconds;
@@ -296,6 +367,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 boostDuration;
         uint256 delegatorBalance;
         uint256 toDelegateAmount;
+        uint256 pricePerVote;
         uint256 realFeeAmount;
         uint256 expiryTime;
         uint256 cancelTime;
@@ -335,15 +407,18 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         BuyVars memory vars;
 
+        // Fetch the BoostOffer for the delegator
+        BoostOffer storage offer = offers[userIndex[delegator]];
+
+        //Check that the duration is less or equal to Offer maxDuration
+        require(duration <= offer.maxDuration, "Warden: duration over Offer max");
+
         // Get the duration of the wanted Boost in seconds
         vars.boostDuration = duration * 1 weeks;
         require(
             vars.boostDuration >= minDelegationTime,
             "Warden: Duration too short"
         );
-
-        // Fetch the BoostOffer for the delegator
-        BoostOffer storage offer = offers[userIndex[delegator]];
 
         require(
             percent >= offer.minPerc && percent <= offer.maxPerc,
@@ -361,10 +436,13 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             "Warden: Cannot delegate"
         );
 
+        //Should we use the Offer price or the advised one
+        vars.pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
+
         // Calculate the price for the given duration, get the real amount of fees to pay,
         // and check the maxFeeAmount provided (and approved beforehand) is enough.
         // Calculated using the pricePerVote set by the delegator
-        vars.realFeeAmount = (vars.toDelegateAmount * offer.pricePerVote * vars.boostDuration) / UNIT;
+        vars.realFeeAmount = (vars.toDelegateAmount * vars.pricePerVote * vars.boostDuration) / UNIT;
         require(
             vars.realFeeAmount <= maxFeeAmount,
             "Warden: Fees do not cover Boost duration"
@@ -425,7 +503,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             receiver,
             vars.newTokenId,
             percent,
-            offer.pricePerVote,
+            vars.pricePerVote,
             vars.realFeeAmount,
             vars.expiryTime
         );
@@ -653,6 +731,16 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return address(uint160(tokenId >> 96));
     }
 
+    // Manager methods:
+
+    function setAdvisedPrice(uint256 newPrice) external {
+        require(approvedManagers[msg.sender], "Warden: Caller not allowed");
+        require(newPrice > 0, "Warden: Null value");
+        advisedPrice = newPrice;
+
+        emit NewAdvisedPrice(newPrice);
+    }
+
     // Admin Functions :
 
     /**
@@ -696,6 +784,26 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function setReserveManager(address newReserveManager) external onlyOwner {
         reserveManager = newReserveManager;
+    }
+
+    /**
+    * @notice Approves a new address as manager 
+    * @dev Approves a new address as manager
+    * @param newManager Address to add
+    */
+    function approveManager(address newManager) external onlyOwner {
+        require(newManager != address(0), "Warden: Zero Address");
+        approvedManagers[newManager] = true;
+    }
+   
+    /**
+    * @notice Removes an address from the managers
+    * @dev Removes an address from the managers
+    * @param manager Address to remove
+    */
+    function removeManager(address manager) external onlyOwner {
+        require(manager != address(0), "Warden: Zero Address");
+        approvedManagers[manager] = false;
     }
 
     /**
