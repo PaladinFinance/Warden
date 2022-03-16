@@ -168,7 +168,7 @@ contract WardenMultiBuy is Ownable {
         vars.wardenMinRequiredPercent = warden.minPercRequired();
 
         // Loop over all the Offers
-        for (uint256 i = 1; i < vars.totalNbOffers; i++) { //since the offer at index 0 is useless
+        for (uint256 i = 1; i < vars.totalNbOffers;) { //since the offer at index 0 is useless
 
             // Break the loop if the target veCRV amount is purchased
             if(vars.missingAmount == 0) break;
@@ -178,9 +178,15 @@ contract WardenMultiBuy is Ownable {
             // Get the available amount of veCRV for the Delegator
             varsOffer.availableUserBalance = _availableAmount(i, maxPrice, vars.expiryTime, clearExpired);
             //Offer is not available or not in the required parameters
-            if (varsOffer.availableUserBalance == 0) continue;
+            if (varsOffer.availableUserBalance == 0) {
+                unchecked{ ++i; }
+                continue;
+            }
             //Offer has an available amount smaller than the required minimum
-            if (varsOffer.availableUserBalance < minRequiredAmount) continue;
+            if (varsOffer.availableUserBalance < minRequiredAmount) {
+                unchecked{ ++i; }
+                continue;
+            }
 
             // If the available amount if larger than the missing amount, buy only the missing amount
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
@@ -189,7 +195,10 @@ contract WardenMultiBuy is Ownable {
             (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration, varsOffer.offerminPercent,) = warden.getOffer(i);
 
             //If the asked duration is over the max duration for this offer, we skip
-            if(duration > varsOffer.offerMaxDuration) continue;
+            if(duration > varsOffer.offerMaxDuration) {
+                unchecked{ ++i; }
+                continue;
+            }
 
             // Calculate the amount of fees to pay for that Boost purchase
             varsOffer.boostFeeAmount = (varsOffer.toBuyAmount * varsOffer.offerPrice * vars.boostDuration) / UNIT;
@@ -197,7 +206,10 @@ contract WardenMultiBuy is Ownable {
             // Calculate the size of the Boost to buy in percent (BPS)
             varsOffer.boostPercent = (varsOffer.toBuyAmount * MAX_PCT) / votingEscrow.balanceOf(varsOffer.delegator);
             // Offer available percent is under Warden's minimum required percent
-            if(varsOffer.boostPercent < vars.wardenMinRequiredPercent || varsOffer.boostPercent < varsOffer.offerminPercent) continue;
+            if(varsOffer.boostPercent < vars.wardenMinRequiredPercent || varsOffer.boostPercent < varsOffer.offerminPercent) {
+                unchecked{ ++i; }
+                continue;
+            }
 
             // Purchase the Boost, retrieve the tokenId
             varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, duration, varsOffer.boostFeeAmount);
@@ -208,6 +220,8 @@ contract WardenMultiBuy is Ownable {
             // Update the missingAmount, and the total amount purchased, with the last purchased executed
             vars.missingAmount -= varsOffer.toBuyAmount;
             vars.boughtAmount += uint256(delegationBoost.token_boost(varsOffer.newTokenId));
+
+            unchecked{ ++i; }
         }
 
         // Compare the total purchased amount (sum of all veBoost amounts) with the given target amount
@@ -356,7 +370,7 @@ contract WardenMultiBuy is Ownable {
         vars.wardenMinRequiredPercent = warden.minPercRequired();
 
         // Loop over all the sorted Offers
-        for (uint256 i = 0; i < sortedOfferIndexes.length; i++) {
+        for (uint256 i = 0; i < sortedOfferIndexes.length;) {
 
             // Check that the given Offer Index is valid & listed in Warden
             require(sortedOfferIndexes[i] != 0 && sortedOfferIndexes[i] < warden.offersIndex(), "BoostOffer does not exist");
@@ -369,9 +383,15 @@ contract WardenMultiBuy is Ownable {
             // Get the available amount of veCRV for the Delegator
             varsOffer.availableUserBalance = _availableAmount(sortedOfferIndexes[i], maxPrice, vars.expiryTime, clearExpired);
             //Offer is not available or not in the required parameters
-            if (varsOffer.availableUserBalance == 0) continue;
+            if (varsOffer.availableUserBalance == 0) {
+                unchecked{ ++i; }
+                continue;
+            }
             //Offer has an available amount smaller than the required minimum
-            if (varsOffer.availableUserBalance < minRequiredAmount) continue;
+            if (varsOffer.availableUserBalance < minRequiredAmount) {
+                unchecked{ ++i; }
+                continue;
+            }
 
             // If the available amount if larger than the missing amount, buy only the missing amount
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
@@ -380,7 +400,10 @@ contract WardenMultiBuy is Ownable {
             (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration, varsOffer.offerminPercent,) = warden.getOffer(sortedOfferIndexes[i]);
 
             //If the asked duration is over the max duration for this offer, we skip
-            if(duration > varsOffer.offerMaxDuration) continue;
+            if(duration > varsOffer.offerMaxDuration) {
+                unchecked{ ++i; }
+                continue;
+            }
 
             // Calculate the amount of fees to pay for that Boost purchase
             varsOffer.boostFeeAmount = (varsOffer.toBuyAmount * varsOffer.offerPrice * vars.boostDuration) / UNIT;
@@ -388,7 +411,10 @@ contract WardenMultiBuy is Ownable {
             // Calculate the size of the Boost to buy in percent (BPS)
             varsOffer.boostPercent = (varsOffer.toBuyAmount * MAX_PCT) / votingEscrow.balanceOf(varsOffer.delegator);
             // Offer available percent is under Warden's minimum required percent
-            if(varsOffer.boostPercent < vars.wardenMinRequiredPercent || varsOffer.boostPercent < varsOffer.offerminPercent) continue; // Offer available percent is udner Warden's minimum required percent
+            if(varsOffer.boostPercent < vars.wardenMinRequiredPercent || varsOffer.boostPercent < varsOffer.offerminPercent) {
+                unchecked{ ++i; }
+                continue;
+            } 
 
             // Purchase the Boost, retrieve the tokenId
             varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, vars.weeksDuration, varsOffer.boostFeeAmount);
@@ -399,7 +425,8 @@ contract WardenMultiBuy is Ownable {
             // Update the missingAmount, and the total amount purchased, with the last purchased executed
             vars.missingAmount -= varsOffer.toBuyAmount;
             vars.boughtAmount += uint256(delegationBoost.token_boost(varsOffer.newTokenId));
-            
+
+            unchecked{ ++i; }
         }
 
         // Compare the total purchased amount (sum of all veBoost amounts) with the given target amount
@@ -431,8 +458,11 @@ contract WardenMultiBuy is Ownable {
 
         // Fetch all the Offers listed in Warden, in memory using the OfferInfos struct
         OfferInfos[] memory offersList = new OfferInfos[](totalNbOffers - 1);
-        for(uint256 i = 0; i < offersList.length; i++){ //Because the 0 index is an empty Offer
+        uint256 length = offersList.length;
+        for(uint256 i = 0; i < length;){ //Because the 0 index is an empty Offer
             (offersList[i].user, offersList[i].price,,,) = warden.getOffer(i + 1);
+
+            unchecked{ ++i; }
         }
 
         // Sort the list using the recursive method
@@ -440,8 +470,11 @@ contract WardenMultiBuy is Ownable {
 
         // Build up the OfferIndex array used buy the MultiBuy method
         uint256[] memory sortedOffers = new uint256[](totalNbOffers - 1);
-        for(uint256 i = 0; i < offersList.length; i++){
+        uint256 length2 = offersList.length;
+        for(uint256 i = 0; i < length2;){
             sortedOffers[i] = warden.userIndex(offersList[i].user);
+
+            unchecked{ ++i; }
         }
 
         return sortedOffers;
@@ -525,7 +558,7 @@ contract WardenMultiBuy is Ownable {
             uint256 currentTime = block.timestamp;
 
             // Loop over the delegator current boosts to find expired ones
-            for (uint256 i = 0; i < currentBoostsNumber; i++) {
+            for (uint256 i = 0; i < currentBoostsNumber;) {
                 uint256 tokenId = delegationBoost.token_of_delegator_by_index(
                     delegator,
                     i
@@ -538,6 +571,8 @@ contract WardenMultiBuy is Ownable {
                     uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
                     potentialCancelableBalance += absolute_boost;
                 }
+
+                unchecked{ ++i; }
             }
         }
 

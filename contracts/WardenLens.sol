@@ -96,7 +96,7 @@ contract WardenLens {
         vars.nbTokens = delegationBoost.total_minted(delegator);
 
         // Loop over the delegator current boosts to find expired ones
-        for (uint256 i = 0; i < vars.nbTokens; i++) {
+        for (uint256 i = 0; i < vars.nbTokens;) {
             uint256 tokenId = delegationBoost.token_of_delegator_by_index(
                 delegator,
                 i
@@ -108,6 +108,8 @@ contract WardenLens {
                 uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
                 vars.potentialCancelableBalance += absolute_boost;
             }
+
+            unchecked{ ++i; }
         }
 
         // If the current Boosts are more than the availableBalance => No balance available for a new Boost
@@ -125,13 +127,15 @@ contract WardenLens {
         address[] memory availableDelegators = new address[](totalNbOffers);
         uint256 availableIndex = 0;
 
-        for(uint256 i = 1; i < totalNbOffers; i++){ //since the offer at index 0 is useless
+        for(uint256 i = 1; i < totalNbOffers;){ //since the offer at index 0 is useless
             (address delegator , , ,uint256 minPerc ,) = warden.getOffer(i);
             uint256 balance = votingEscrow.balanceOf(delegator);
             if(_canDelegate(delegator, (balance * minPerc) / MAX_PCT)){
                 availableDelegators[availableIndex] = delegator;
                 availableIndex++;
             }
+
+            unchecked{ ++i; }
         }
 
         return availableDelegators;
@@ -151,7 +155,7 @@ contract WardenLens {
 
         prices.lowest = MAX_UINT; //Set max amount as lowest value instead of 0
 
-        for(uint256 i = 1; i < totalNbOffers; i++){ //since the offer at index 0 is useless
+        for(uint256 i = 1; i < totalNbOffers;){ //since the offer at index 0 is useless
             (,uint256 offerPrice,,,) = warden.getOffer(i);
 
             sumPrices += offerPrice;
@@ -162,6 +166,8 @@ contract WardenLens {
             if(offerPrice < prices.lowest && offerPrice != 0){
                 prices.lowest = offerPrice;
             }
+
+            unchecked{ ++i; }
         }
 
         prices.median = sumPrices / (totalNbOffers - 1);

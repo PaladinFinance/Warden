@@ -641,7 +641,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 nbToCancel = 0;
 
         // Loop over the delegator current boosts to find expired ones
-        for (uint256 i = 0; i < nbTokens; i++) {
+        for (uint256 i = 0; i < nbTokens;) {
             uint256 tokenId = delegationBoost.token_of_delegator_by_index(
                 delegator,
                 i
@@ -654,6 +654,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
                 toCancel[nbToCancel] = tokenId;
                 nbToCancel++;
             }
+
+            unchecked{ ++i; }
         }
 
         // If the current Boosts are more than the availableBalance => No balance available for a new Boost
@@ -678,7 +680,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 currentTime = block.timestamp;
 
         // Loop over the delegator current boosts to find expired ones
-        for (uint256 i = 0; i < nbTokens; i++) {
+        for (uint256 i = 0; i < nbTokens;) {
             uint256 tokenId = delegationBoost.token_of_delegator_by_index(
                 delegator,
                 i
@@ -689,6 +691,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
                 toCancel[nbToCancel] = tokenId;
                 nbToCancel++;
             }
+
+            unchecked{ ++i; }
         }
 
         // If Boost were found, cancel the batch
