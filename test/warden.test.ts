@@ -969,6 +969,64 @@ describe('Warden contract tests', () => {
 
         });
 
+        it(' should clear the expired Boost before purchase', async () => {
+
+            const smaller_percent = 2500
+
+            await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, smaller_percent, duration, fee_amount)
+
+            const token_id_1 = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            await advanceTime(one_week * (duration + 1))
+
+            const old_balance = await CRV.balanceOf(receiver.address)
+
+            const buy_tx = await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount)
+
+            const token_id_2 = await delegationBoost.get_token_id(
+                delegator.address,
+                (await delegationBoost.total_minted(delegator.address)).sub(1)
+            );
+
+            const tx_timestamp = (await ethers.provider.getBlock((await buy_tx).blockNumber || 0)).timestamp
+
+            const boost_expire_time = await delegationBoost.token_expiry(token_id_2)
+            const boost_cancel_time = await delegationBoost.token_cancel_time(token_id_2)
+
+            const new_balance = await CRV.balanceOf(receiver.address)
+
+            const paidFees = old_balance.sub(new_balance)
+
+            expect(paidFees).to.be.lt(fee_amount)
+
+            expect(await delegationBoost.token_boost(token_id_1)).to.be.eq(0)
+            expect(await delegationBoost.token_expiry(token_id_1)).to.be.eq(0)
+            expect(await delegationBoost.token_cancel_time(token_id_1)).to.be.eq(0)
+
+            const tx_block = (await buy_tx).blockNumber
+
+            const boost_amount = await delegationBoost.token_boost(token_id_2, { blockTag: tx_block })
+
+            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
+            const veCRV_balance_delegator = await veCRV.balanceOf(delegator.address, { blockTag: tx_block })
+            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            const veCRV_adjusted_delegator = await delegationBoost.adjusted_balance_of(delegator.address, { blockTag: tx_block })
+
+            expect(boost_amount).not.to.be.eq(0)
+            expect(boost_expire_time).to.be.gte(tx_timestamp + (duration * one_week)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
+            expect(boost_cancel_time).to.be.eq(tx_timestamp + (duration * one_week))
+
+            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(boost_amount))
+            expect(veCRV_adjusted_delegator).to.be.eq(veCRV_balance_delegator.sub(boost_amount))
+
+            // Cancel Boost by receiver (so delegator is available for later tests)
+            await delegationBoost.connect(receiver).cancel_boost(token_id_2)
+
+        });
+
     });
 
 
