@@ -460,49 +460,65 @@ contract WardenMultiBuy is Ownable {
             _quickSort(offersList, i, right);
     }
 
-    
+    struct AvailableAmountVars {
+        address delegator;
+        uint256 offerPrice;
+        uint256 minPerc;
+        uint256 maxPerc;
+        uint256 userBalance;
+        uint256 delegatedBalance;
+        uint256 blockedBalance;
+        uint256 availableBalance;
+        uint256 minBoostAmount;
+        uint256 potentialCancelableBalance;
+        uint256 currentBoostsNumber;
+    }
 
     function _availableAmount(
         uint256 offerIndex,
         uint256 maxPrice,
         uint256 expiryTime,
         bool clearExpired
-    ) internal view returns (uint256) {
+    ) internal returns (uint256) {
+        AvailableAmountVars memory vars;
+
         (
-            address delegator,
-            uint256 offerPrice,
-            uint256 minPerc,
-            uint256 maxPerc
+            vars.delegator,
+            vars.offerPrice,
+            vars.minPerc,
+            vars.maxPerc
         ) = warden.offers(offerIndex);
 
         // Price of the Offer is over the maxPrice given
-        if (offerPrice > maxPrice) return 0;
+        if (vars.offerPrice > maxPrice) return 0;
 
         // Warden cannot create the Boost
-        if (!delegationBoost.isApprovedForAll(delegator, address(warden))) return 0;
+        if (!delegationBoost.isApprovedForAll(vars.delegator, address(warden))) return 0;
 
         // veCRV locks ends before wanted duration
-        if (expiryTime >= votingEscrow.locked__end(delegator)) return 0;
+        if (expiryTime >= votingEscrow.locked__end(vars.delegator)) return 0;
 
-        uint256 userBalance = votingEscrow.balanceOf(delegator);
+        vars.userBalance = votingEscrow.balanceOf(vars.delegator);
 
         // Total amount currently delegated
-        uint256 delegatedBalance = delegationBoost.delegated_boost(delegator);
+        vars.delegatedBalance = delegationBoost.delegated_boost(vars.delegator);
 
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
-        uint256 blockedBalance = (userBalance * (MAX_PCT - maxPerc)) / MAX_PCT;
+        vars.blockedBalance = (vars.userBalance * (MAX_PCT - vars.maxPerc)) / MAX_PCT;
 
-        uint256 availableBalance = userBalance - blockedBalance;
+        vars.availableBalance = vars.userBalance - vars.blockedBalance;
 
         // Minmum amount of veCRV for the boost for this Offer
-        uint256 minBoostAmount = (userBalance * minPerc) / MAX_PCT;
+        vars.minBoostAmount = (vars.userBalance * vars.minPerc) / MAX_PCT;
 
         // If we don't want to take Offer with Boost to clear (cheaper gas cost for the purchase)
         if(!clearExpired) {
-            if(availableBalance > delegatedBalance){
-                if(minBoostAmount > (availableBalance - delegatedBalance)) return 0;
+            if(delegationBoost.adjusted_balance_of(vars.delegator) == 0) return 0;
 
-                return (availableBalance - delegatedBalance);
+            if(vars.availableBalance > vars.delegatedBalance){
+                if(vars.minBoostAmount > (vars.availableBalance - vars.delegatedBalance)) return 0;
+
+                return (vars.availableBalance - vars.delegatedBalance);
             }
 
             return 0;
@@ -510,33 +526,61 @@ contract WardenMultiBuy is Ownable {
 
         // If we want to clear expired Boosts, loop over the Delegate's Boosts to find the expired one
         // that could be canceled to free part of the balance for a new Boost
-        uint256 currentBoostsNumber = delegationBoost.total_minted(delegator);
-        uint256 potentialCancelableBalance = 0;
-        if(currentBoostsNumber > 0){
-            uint256 currentTime = block.timestamp;
+        vars.currentBoostsNumber = delegationBoost.total_minted(vars.delegator);
+        uint256[256] memory expiredBoosts; //Need this type of array because of batch_cancel_boosts() from veBoost
 
-            // Loop over the delegator current boosts to find expired ones
-            for (uint256 i = 0; i < currentBoostsNumber; i++) {
+        vars.potentialCancelableBalance = 0;
+
+        if(vars.currentBoostsNumber > 0){
+            uint256 nbExpired = 0;
+
+            for (uint256 i = 0; i < vars.currentBoostsNumber;) {
                 uint256 tokenId = delegationBoost.token_of_delegator_by_index(
-                    delegator,
+                    vars.delegator,
                     i
                 );
+
+                if (delegationBoost.token_expiry(tokenId) < block.timestamp) {
+                    expiredBoosts[nbExpired] = tokenId;
+                    nbExpired++;
+                }
+
+                unchecked{ ++i; }
+            }
+
+            if (nbExpired > 0) {
+                // Clear all expired boosts so we can create new ones for this delegator
+                delegationBoost.batch_cancel_boosts(expiredBoosts);
+
+                // Update the delegated balance after the clearing
+                vars.delegatedBalance = delegationBoost.delegated_boost(vars.delegator);
+            }
+
+            // Loop over the delegator current boosts to find cancelable ones
+            for (uint256 i = 0; i < vars.currentBoostsNumber;) {
+                uint256 tokenId = delegationBoost.token_of_delegator_by_index(
+                    vars.delegator,
+                    i
+                );
+
                 uint256 cancelTime = delegationBoost.token_cancel_time(tokenId);
 
                 // If the Boost can be canceled
-                if (cancelTime < currentTime) {
+                if (cancelTime < block.timestamp) {
                     int256 boost = delegationBoost.token_boost(tokenId);
                     uint256 absolute_boost = boost >= 0 ? uint256(boost) : uint256(-boost);
-                    potentialCancelableBalance += absolute_boost;
+                    vars.potentialCancelableBalance += absolute_boost;
                 }
+
+                unchecked{ ++i; }
             }
         }
 
         // Cannot cancel enough Boosts amounts to reach free the account availableBalance
-        if (availableBalance < (delegatedBalance - potentialCancelableBalance)) return 0;
+        if (vars.availableBalance < (vars.delegatedBalance - vars.potentialCancelableBalance)) return 0;
         // If canceling the tokens can free enough to delegate
-        if (minBoostAmount <= (availableBalance - (delegatedBalance - potentialCancelableBalance))) {
-            return (availableBalance - (delegatedBalance - potentialCancelableBalance));
+        if (vars.minBoostAmount <= (vars.availableBalance - (vars.delegatedBalance - vars.potentialCancelableBalance))) {
+            return (vars.availableBalance - (vars.delegatedBalance - vars.potentialCancelableBalance));
         }
 
         return 0; //fallback => not enough availableBalance to propose the minimum Boost Amount allowed

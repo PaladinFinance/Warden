@@ -13,7 +13,6 @@ import { IVotingEscrowDelegation__factory } from "../typechain/factories/IVoting
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
-import { Event } from 'ethers';
 
 import {
     advanceTime,
@@ -946,6 +945,176 @@ describe('Warden MultiBuy contract tests', () => {
             }
         });
 
+        it(' should skip Offer where delegator has not cleared expired Boosts', async () => {
+
+            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+
+            await warden.connect(receiver).buyDelegationBoost(delegator3.address, receiver.address, 2000, duration, fee_amount)
+
+            const token_id_1 = await delegationBoost.get_token_id(
+                delegator3.address,
+                (await delegationBoost.total_minted(delegator3.address)).sub(1)
+            );
+
+            await advanceTime(one_week.mul(duration + 3).toNumber())
+            
+            const slightly_bigger_amount = ethers.utils.parseEther('950')
+            const slightly_bigger_fee_amount = slightly_bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
+
+            const buy_tx = await multiBuy.connect(receiver).simpleMultiBuy(
+                receiver.address,
+                duration,
+                slightly_bigger_amount,
+                max_price,
+                minRequiredAmount,
+                slightly_bigger_fee_amount,
+                accepted_slippage,
+                false
+            )
+
+            const tx_block = (await buy_tx).blockNumber
+            const block_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
+
+            const receipt = await buy_tx.wait()
+
+            const iface = warden.interface;
+            const topic = iface.getEventTopic('BoostPurchase')
+            const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
+            const events = buy_logs.map((log) => (iface.parseLog(log)).args)
+
+            const expected_offers_indexes_order = [1,2,4,7] // Expected Offers to have been used by the multiBuy
+            let effective_total_boost_amount = BigNumber.from(0)
+
+            const expected_total_boost_amount_with_slippage = slightly_bigger_amount.mul(BPS - accepted_slippage).div(BPS)
+
+            // Get the users that emitted Boosts => Get the offers that have been used
+            for(let e of events){
+
+                let boost_delegator = e.delegator
+                let boost_index = await warden.userIndex(boost_delegator)
+                expect(expected_offers_indexes_order).to.contain(boost_index.toNumber())
+                expect(boost_index.toNumber()).not.to.be.eq(3)
+
+                const delegator_offer = await warden.offers(boost_index);
+
+                // Check that it used the max % available for that Offer (except for the last one)
+                if(boost_index.toNumber() != expected_offers_indexes_order[expected_offers_indexes_order.length - 1]) 
+                    expect(e.percent).to.be.eq(delegator_offer.maxPerc)
+
+                let exact_boost_amount = await delegationBoost.token_boost(e.tokenId, { blockTag: tx_block })
+
+                effective_total_boost_amount = effective_total_boost_amount.add(exact_boost_amount)
+
+                expect(e.price).to.be.lte(max_price)
+
+                //Check that ExpiryTime & CancelTime are correct for both
+                let boost_expire_time = await delegationBoost.token_expiry(e.tokenId)
+                let boost_cancel_time = await delegationBoost.token_cancel_time(e.tokenId)
+                expect(boost_expire_time).to.be.gte((one_week.mul(duration)).add(block_timestamp)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
+                expect(boost_cancel_time).to.be.eq((one_week.mul(duration)).add(block_timestamp))
+            }
+
+            //Homemade check :
+            //amount with slippage <= effective boost amount <= requested amount
+            expect(effective_total_boost_amount).to.be.lte(slightly_bigger_amount)
+            expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
+
+            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
+            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            const expired_boost_amount = await delegationBoost.token_boost(token_id_1, { blockTag: tx_block })
+            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount).add(expired_boost_amount))
+
+            //close all the Boosts for next tests
+            for(let e of events){
+                await delegationBoost.connect(receiver).cancel_boost(e.tokenId)
+            }
+            await delegationBoost.connect(receiver).cancel_boost(token_id_1)
+            
+        });
+
+        it(' should take Offer where small expired Boosts can be cleared', async () => {
+
+            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            
+            await warden.connect(receiver).buyDelegationBoost(delegator3.address, receiver.address, 2000, duration, fee_amount)
+
+            const token_id_1 = await delegationBoost.get_token_id(
+                delegator3.address,
+                (await delegationBoost.total_minted(delegator3.address)).sub(1)
+            );
+
+            await advanceTime(one_week.mul(duration + 3).toNumber())
+            
+            const slightly_bigger_amount = ethers.utils.parseEther('750')
+            const slightly_bigger_fee_amount = slightly_bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
+
+            const buy_tx = await multiBuy.connect(receiver).simpleMultiBuy(
+                receiver.address,
+                duration,
+                slightly_bigger_amount,
+                max_price,
+                minRequiredAmount,
+                slightly_bigger_fee_amount,
+                accepted_slippage,
+                true
+            )
+
+            const tx_block = (await buy_tx).blockNumber
+            const block_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
+
+            const receipt = await buy_tx.wait()
+
+            const iface = warden.interface;
+            const topic = iface.getEventTopic('BoostPurchase')
+            const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
+            const events = buy_logs.map((log) => (iface.parseLog(log)).args)
+
+            const expected_offers_indexes_order = [1,2,3,4] // Expected Offers to have been used by the multiBuy
+            let effective_total_boost_amount = BigNumber.from(0)
+
+            const expected_total_boost_amount_with_slippage = slightly_bigger_amount.mul(BPS - accepted_slippage).div(BPS)
+
+            // Get the users that emitted Boosts => Get the offers that have been used
+            for(let e of events){
+
+                let boost_delegator = e.delegator
+                let boost_index = await warden.userIndex(boost_delegator)
+                expect(expected_offers_indexes_order).to.contain(boost_index.toNumber())
+
+                const delegator_offer = await warden.offers(boost_index);
+
+                // Check that it used the max % available for that Offer (except for the last one)
+                if(boost_index.toNumber() != expected_offers_indexes_order[expected_offers_indexes_order.length - 1]) 
+                    expect(e.percent).to.be.eq(delegator_offer.maxPerc)
+
+                let exact_boost_amount = await delegationBoost.token_boost(e.tokenId, { blockTag: tx_block })
+
+                effective_total_boost_amount = effective_total_boost_amount.add(exact_boost_amount)
+
+                expect(e.price).to.be.lte(max_price)
+
+                //Check that ExpiryTime & CancelTime are correct for both
+                let boost_expire_time = await delegationBoost.token_expiry(e.tokenId)
+                let boost_cancel_time = await delegationBoost.token_cancel_time(e.tokenId)
+                expect(boost_expire_time).to.be.gte((one_week.mul(duration)).add(block_timestamp)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
+                expect(boost_cancel_time).to.be.eq((one_week.mul(duration)).add(block_timestamp))
+            }
+
+            //Homemade check :
+            //amount with slippage <= effective boost amount <= requested amount
+            expect(effective_total_boost_amount).to.be.lte(slightly_bigger_amount)
+            expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
+
+            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
+            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+
+            //close all the Boosts for next tests
+            for(let e of events){
+                await delegationBoost.connect(receiver).cancel_boost(e.tokenId)
+            }
+        });
+
     });
 
     describe('preSortedMultiBuy', async () => {
@@ -953,7 +1122,7 @@ describe('Warden MultiBuy contract tests', () => {
         const one_week = BigNumber.from(7 * 86400);
         const duration = 2
 
-        const amount = ethers.utils.parseEther('700')
+        const amount = ethers.utils.parseEther('675')
         const bigger_amount = ethers.utils.parseEther('2000')
         
         const max_price = price_per_vote2
@@ -1475,7 +1644,7 @@ describe('Warden MultiBuy contract tests', () => {
 
                 const other_preSorted_Offers = [7,5,8,1,4,6]
     
-                const slightly_bigger_amount = ethers.utils.parseEther('800')
+                const slightly_bigger_amount = ethers.utils.parseEther('750')
                 const slightly_bigger_fee_amount = slightly_bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
                 
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1699,7 +1868,109 @@ describe('Warden MultiBuy contract tests', () => {
                 const tx_timestamp = (await ethers.provider.getBlock((await buy_2_tx).blockNumber || 0)).timestamp
                 await advanceTime(boost_cancel_time.sub(tx_timestamp).toNumber())
     
-                const other_amount = ethers.utils.parseEther('600')
+                const other_amount = ethers.utils.parseEther('550')
+    
+                const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
+    
+                const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
+                    receiver.address,
+                    duration,
+                    other_amount,
+                    max_price,
+                    minRequiredAmount,
+                    other_fee_amount,
+                    accepted_slippage,
+                    true,
+                    preSorted_Offers_list
+                )
+    
+                const tx_block = (await buy_tx).blockNumber
+                const block_timestamp = (await ethers.provider.getBlock(tx_block || 0)).timestamp
+    
+                const receipt = await buy_tx.wait()
+    
+                const iface = warden.interface;
+                const topic = iface.getEventTopic('BoostPurchase')
+                const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
+                const events = buy_logs.map((log) => (iface.parseLog(log)).args)
+    
+                const expected_offers_indexes_order = [7,8] // Expected Offers to have been used by the multiBuy
+                let effective_total_boost_amount = BigNumber.from(0)
+    
+                const expected_total_boost_amount_with_slippage = other_amount.mul(BPS - accepted_slippage).div(BPS)
+    
+                let i = 0
+    
+                // Get the users that emitted Boosts => Get the offers that have been used
+                for(let e of events){
+    
+                    let boost_delegator = e.delegator
+                    let boost_index = await warden.userIndex(boost_delegator)
+
+                    expect(boost_index.toNumber()).to.be.eq(expected_offers_indexes_order[i])
+    
+                    const delegator_offer = await warden.offers(boost_index);
+    
+                    // Check that it used the max % available for that Offer (except for the last one)
+                    if(boost_index.toNumber() != expected_offers_indexes_order[expected_offers_indexes_order.length - 1]) 
+                        expect(e.percent).to.be.eq(delegator_offer.maxPerc)
+    
+                    let exact_boost_amount = await delegationBoost.token_boost(e.tokenId, { blockTag: tx_block })
+    
+                    effective_total_boost_amount = effective_total_boost_amount.add(exact_boost_amount)
+    
+                    expect(e.price).to.be.lte(max_price)
+    
+                    //Check that ExpiryTime & CancelTime are correct for both
+                    let boost_expire_time = await delegationBoost.token_expiry(e.tokenId)
+                    let boost_cancel_time = await delegationBoost.token_cancel_time(e.tokenId)
+                    expect(boost_expire_time).to.be.gte((one_week.mul(duration)).add(block_timestamp)) //since there might be "bonus days" because of the veBoost rounding down on expire_time
+                    expect(boost_cancel_time).to.be.eq((one_week.mul(duration)).add(block_timestamp))
+
+                    i++;
+                }
+    
+                //Homemade check :
+                //amount with slippage <= effective boost amount <= requested amount
+                expect(effective_total_boost_amount).to.be.lte(other_amount)
+                expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
+    
+                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
+                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+    
+                //close all the Boosts for next tests
+                await delegationBoost.connect(receiver2).cancel_boost(token_id1)
+                await delegationBoost.connect(receiver2).cancel_boost(token_id2)
+                for(let e of events){
+                    await delegationBoost.connect(receiver).cancel_boost(e.tokenId)
+                }
+            });
+    
+            it(' should take Offer where expired Boosts were cleared', async () => {
+                
+                const boost_buy_percent = 2000
+    
+                await CRV.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
+    
+                const fee_amount1 = await warden.estimateFees(delegator7.address, boost_buy_percent, duration)
+                const fee_amount2 = await warden.estimateFees(delegator8.address, boost_buy_percent, duration)
+    
+                await warden.connect(receiver2).buyDelegationBoost(delegator7.address, receiver2.address, boost_buy_percent, duration, fee_amount1)
+                const buy_2_tx = await warden.connect(receiver2).buyDelegationBoost(delegator8.address, receiver2.address, boost_buy_percent, duration, fee_amount2)
+    
+                const token_id1 = await delegationBoost.get_token_id(
+                    delegator7.address,
+                    (await delegationBoost.total_minted(delegator7.address)).sub(1)
+                );
+                const token_id2 = await delegationBoost.get_token_id(
+                    delegator8.address,
+                    (await delegationBoost.total_minted(delegator8.address)).sub(1)
+                );
+
+                await advanceTime(one_week.mul(duration + 1).toNumber())
+    
+                const other_amount = ethers.utils.parseEther('550')
     
                 const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
     
