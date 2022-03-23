@@ -22,7 +22,11 @@ But the cancel_time of the created Boost will relfect the real duration paid for
 Warden: 0x2e2f6aece0B7Caa7D3BfDFb2728F50b4e211F1eB  
 Warden BuyWrapper: 0x0ea62B817EB48ccEcD7df44164aCceE114650Ed4  
 WardenLens: 0xe0be968a0D6Bba03720DfDB2F3d4b3ED0083b4c7  
+<<<<<<< HEAD
 WardenMultiBuy: 0x40C1c7Bd620ae59215913F819c45AF75F1b7aFcE  
+=======
+WardenMultiBuy: 0x40C1c7Bd620ae59215913F819c45AF75F1b7aFcE    
+>>>>>>> 98df40b04e6fa6eefb6e01f56b2f507d2798662a
 
 ## Dependencies & Installation
 
@@ -47,9 +51,14 @@ This will install `Hardhat`, `Ethers v5`, and all the hardhat plugins used in th
 
 * [Warden](https://github.com/PaladinFinance/Warden/tree/main/contracts/Warden.sol) : Main contract
 * [WardenLens](https://github.com/PaladinFinance/Warden/tree/main/contracts/WardenLens.sol) : Contract to fetch & filter data from the Warden contract
+<<<<<<< HEAD
 * [WardenMultiBuy](https://github.com/PaladinFinance/Warden/blob/v1-update/contracts/WardenMultiBuy.sol) : Contract to batch multiple Boost purchase in 1 transaction
 * [WardenBuyWrapper](https://github.com/PaladinFinance/Warden/blob/v1-update/contracts/WardenBuyWrapper.sol) : Contract wrapping the buyDelegationBoost to clear expired Boost from delegator before purchase
 
+=======
+* [WardenMultiBuy](https://github.com/PaladinFinance/Warden/blob/main/contracts/WardenMultiBuy.sol) : Contract to batch multiple Boost purchase in 1 transaction
+* [WardenBuyWrapper](https://github.com/PaladinFinance/Warden/blob/v1-update/contracts/WardenBuyWrapper.sol) : Contract wrapping the buyDelegationBoost to clear expired Boost from delegator before purchase
+>>>>>>> 98df40b04e6fa6eefb6e01f56b2f507d2798662a
 
 ## Tests
 
