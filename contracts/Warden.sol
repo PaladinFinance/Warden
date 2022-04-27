@@ -80,6 +80,44 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     mapping(address => bool) public approvedManagers;
 
+    uint256 public nextUpdatePeriod;
+
+    mapping(uint256 => uint256) public periodRewardIndex;
+
+    uint256 public baseWeeklyDropPerVote;
+
+    uint256 public minWeeklyDropPerVote;
+
+    uint256 public targetPurchaseAmount;
+
+    mapping(uint256 => uint256) public periodDropPerVote;
+
+    mapping(uint256 => uint256) public periodPurchasedAmount;
+
+    mapping(uint256 => uint256) public periodEndPurchasedDecrease;
+
+    mapping(uint256 => uint256) public periodPurchasedDecreaseChanges;
+
+    uint256 public extraPaidPast;
+
+    uint256 public remainingRewardPastPeriod;
+
+    struct PurchasedBoost {
+        uint256 amount;
+        uint256 startIndex;
+        uint128 startTimestamp;
+        uint128 endTimestamp;
+        address buyer;
+        bool claimed;
+    }
+
+    mapping(uint256 => PurchasedBoost) public purchasedBoosts;
+
+    mapping(address => uint256[]) public userPurchasedBoosts;
+    
+    IERC20 public rewardToken;
+
+
     // Events :
 
     event Registred(address indexed user, uint256 price);
@@ -100,6 +138,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     );
 
     event Claim(address indexed user, uint256 amount);
+
+    event ClaimReward(uint256 boostId, address indexed user, uint256 amount);
 
     event NewAdvisedPrice(uint256 newPrice);
 
@@ -143,10 +183,99 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         offers.push(BoostOffer(address(0), 0, 0, 0, 0, false));
     }
 
+    // Modifiers :
+
+    modifier rewardStateUpdate() {
+        require(updateRewardState(), "Warden: Reward update fail");
+        _;
+    }
+
     // Functions :
 
     function offersIndex() external view returns(uint256){
         return offers.length;
+    }
+
+    function currentPeriod() public view returns(uint256) {
+        return (block.timestamp / WEEK) * WEEK;
+    }
+
+    function updateRewardState() whenNotPaused public returns(bool){
+        if(nextUpdatePeriod == 0) return true; // Reward distribution not initialized
+        // Updates once a week
+        // If last update is less than a week ago, simply return
+        if(block.timestamp < nextUpdatePeriod) return true;
+
+        uint256 period = nextUpdatePeriod;
+
+        // Only update 100 period at a time
+        for(uint256 i; i < 100;){
+            if(period > block.timestamp) break;
+
+            uint256 nextPeriod = period + WEEK;
+
+            uint256 weeklyDropAmount = (baseWeeklyDropPerVote * targetPurchaseAmount) / UNIT;
+            uint256 periodRewardAmount = (periodPurchasedAmount[period] * periodDropPerVote[period]) / UNIT;
+
+            if(periodRewardAmount <= weeklyDropAmount){
+                uint256 undistributedAmount = weeklyDropAmount - periodRewardAmount;
+                
+                if(extraPaidPast != 0){
+                    if(undistributedAmount >= extraPaidPast){
+                        undistributedAmount -= extraPaidPast;
+                        extraPaidPast = 0;
+                    } else{
+                        extraPaidPast -= undistributedAmount;
+                        undistributedAmount = 0;
+                    }
+                }
+                remainingRewardPastPeriod += undistributedAmount;
+            } else {
+                uint256 overdistributedAmount = periodRewardAmount - weeklyDropAmount;
+
+                if(remainingRewardPastPeriod != 0){
+                    if(overdistributedAmount >= remainingRewardPastPeriod){
+                        overdistributedAmount -= remainingRewardPastPeriod;
+                        remainingRewardPastPeriod = 0;
+                    } else{
+                        remainingRewardPastPeriod -= overdistributedAmount;
+                        overdistributedAmount = 0;
+                    }
+                }
+                extraPaidPast += overdistributedAmount;
+            }
+
+            // Calculate nextPeriod new drop
+            uint256 nextPeriodDropPerVote;
+            if(extraPaidPast >= weeklyDropAmount + remainingRewardPastPeriod){
+                nextPeriodDropPerVote = minWeeklyDropPerVote;
+            } else {
+                uint256 tempWeeklyDropPerVote = (weeklyDropAmount + remainingRewardPastPeriod - extraPaidPast) / targetPurchaseAmount;
+                nextPeriodDropPerVote = tempWeeklyDropPerVote > minWeeklyDropPerVote ? tempWeeklyDropPerVote : minWeeklyDropPerVote;
+            }
+            periodDropPerVote[nextPeriod] = nextPeriodDropPerVote;
+
+            // Update the index for the period, based on the period DropPerVote
+            periodRewardIndex[nextPeriod] = periodRewardIndex[period] + periodDropPerVote[period];
+
+            // Make next period purchased amount decrease changes
+            if(periodPurchasedAmount[period] >= periodEndPurchasedDecrease[period]){
+                periodPurchasedAmount[nextPeriod] += periodPurchasedAmount[period] - periodEndPurchasedDecrease[period];
+                // Else, we consider the current period purchased amount as  totally removed
+            }
+            if(periodEndPurchasedDecrease[period] >= periodPurchasedDecreaseChanges[nextPeriod]){
+                periodEndPurchasedDecrease[nextPeriod] += periodEndPurchasedDecrease[period] - periodPurchasedDecreaseChanges[nextPeriod];
+                // Else the decrease from the current period does not need to be kept for the next period
+            }
+
+
+            period = nextPeriod;
+            unchecked{ ++i; }
+        }
+
+        nextUpdatePeriod = period;
+
+        return true;
     }
 
     /**
@@ -162,7 +291,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint16 minPerc,
         uint16 maxPerc,
         bool useAdvicePrice
-    ) external whenNotPaused returns(bool) {
+    ) external whenNotPaused rewardStateUpdate returns(bool) {
         address user = msg.sender;
         require(userIndex[user] == 0, "Warden: Already registered");
         require(
@@ -198,7 +327,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint16 minPerc,
         uint16 maxPerc,
         bool useAdvicePrice
-    ) external whenNotPaused returns(bool) {
+    ) external whenNotPaused rewardStateUpdate returns(bool) {
         // Fet the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
@@ -230,7 +359,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function updateOfferPrice(
         uint256 pricePerVote,
         bool useAdvicePrice
-    ) external whenNotPaused returns(bool) {
+    ) external whenNotPaused rewardStateUpdate returns(bool) {
         // Fet the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
@@ -273,7 +402,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Remove the BoostOffer of the user, and claim any remaining fees earned
      * @dev User's BoostOffer is removed from the listing, and any unclaimed fees is sent
      */
-    function quit() external whenNotPaused nonReentrant returns(bool) {
+    function quit() external whenNotPaused nonReentrant rewardStateUpdate returns(bool) {
         address user = msg.sender;
         require(userIndex[user] != 0, "Warden: Not registered");
 
@@ -374,6 +503,9 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 boostPercent;
         uint256 newId;
         uint256 newTokenId;
+        uint256 currentPeriod;
+        uint256 currentRewardIndex;
+        uint256 boostDecrease;
     }
 
     /**
@@ -392,7 +524,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 percent,
         uint256 duration, //in weeks
         uint256 maxFeeAmount
-    ) external nonReentrant whenNotPaused returns(uint256) {
+    ) external nonReentrant whenNotPaused rewardStateUpdate returns(uint256) {
         require(
             delegator != address(0) && receiver != address(0),
             "Warden: Zero address"
@@ -498,6 +630,34 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             "Warden: DelegationBoost failed"
         );
 
+        // Find the current reward index
+        vars.currentPeriod = currentPeriod();
+        vars.currentRewardIndex = periodRewardIndex[vars.currentPeriod] + (
+            (periodDropPerVote[vars.currentPeriod] * (block.timestamp - vars.currentPeriod)) / WEEK
+        );
+
+        // Add the amount purchased to the period purchased amount (& the decrease + decrease change)
+        vars.boostDecrease = vars.toDelegateAmount / (vars.expiryTime - block.timestamp);
+        periodPurchasedAmount[vars.currentPeriod] += vars.toDelegateAmount;
+        periodEndPurchasedDecrease[vars.currentPeriod] += vars.boostDecrease * (block.timestamp - vars.currentPeriod);
+        periodPurchasedDecreaseChanges[vars.currentPeriod + WEEK] += vars.boostDecrease * (block.timestamp - vars.currentPeriod);
+
+        if(vars.expiryTime != (vars.currentPeriod + WEEK)){
+            periodEndPurchasedDecrease[vars.currentPeriod + WEEK] += vars.boostDecrease * WEEK;
+            periodPurchasedDecreaseChanges[vars.expiryTime] += vars.boostDecrease * WEEK;
+        }
+
+        // Write the Purchase for rewards
+        purchasedBoosts[vars.newTokenId] = PurchasedBoost(
+            vars.toDelegateAmount,
+            vars.currentRewardIndex,
+            uint128(block.timestamp),
+            uint128(vars.expiryTime),
+            msg.sender,
+            false
+        );
+        userPurchasedBoosts[msg.sender].push(vars.newTokenId);
+
         emit BoostPurchase(
             delegator,
             receiver,
@@ -519,7 +679,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * Else, after expiry_time
      * @param tokenId Id of the DelegationBoost token to cancel
      */
-    function cancelDelegationBoost(uint256 tokenId) external whenNotPaused returns(bool) {
+    function cancelDelegationBoost(uint256 tokenId) external whenNotPaused rewardStateUpdate returns(bool) {
         address tokenOwner = delegationBoost.ownerOf(tokenId);
         // If the caller own the token, and this contract is operator for the owner
         // we try to burn the token directly
@@ -566,7 +726,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Claims all earned fees
      * @dev Send all the user's earned fees
      */
-    function claim() external nonReentrant returns(bool) {
+    function claim() external nonReentrant rewardStateUpdate returns(bool) {
         require(
             earnedFees[msg.sender] != 0,
             "Warden: Claim null amount"
@@ -578,7 +738,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Claims all earned fees, and cancel all expired Delegation Boost for the user
      * @dev Send all the user's earned fees, and fetch all expired Boosts to cancel them
      */
-    function claimAndCancel() external nonReentrant returns(bool) {
+    function claimAndCancel() external nonReentrant rewardStateUpdate returns(bool) {
         _cancelAllExpired(msg.sender);
         return _claim(msg.sender, earnedFees[msg.sender]);
     }
@@ -588,13 +748,52 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @dev Send the given amount of earned fees (if amount is correct)
      * @param amount Amount of earned fees to claim
      */
-    function claim(uint256 amount) external nonReentrant returns(bool) {
+    function claim(uint256 amount) external nonReentrant rewardStateUpdate returns(bool) {
         require(amount <= earnedFees[msg.sender], "Warden: Amount too high");
         require(
             amount != 0,
             "Warden: Claim null amount"
         );
         return _claim(msg.sender, amount);
+    }
+
+    function getUserclaimableBoosts(address user) external view returns(uint256[] memory) {
+        return userPurchasedBoosts[user];
+    }
+
+    function getPurchasedBoost(uint256 boostId) external view returns(PurchasedBoost memory) {
+        return purchasedBoosts[boostId];
+    }
+
+    function getBoostReward(uint256 boostId) external view returns(uint256) {
+        require(
+            boostId != 0,
+            "Warden: IncorrectBoost"
+        );
+        return _getBoostRewardAmount(boostId);
+    }
+
+    function claimBoostReward(uint256 boostId) external nonReentrant rewardStateUpdate returns(bool) {
+        require(
+            boostId != 0,
+            "Warden: IncorrectBoost"
+        );
+        return _claimBoostRewards(boostId);
+    }
+
+    function claimMultipleBoostReward(uint256[] calldata boostIds) external nonReentrant rewardStateUpdate returns(bool) {
+        uint256 length = boostIds.length;
+        for(uint256 i; i < length;) {
+            require(
+                boostIds[i] != 0,
+                "Warden: IncorrectBoost"
+            );
+            require(_claimBoostRewards(boostIds[i]));
+
+            unchecked{ ++i; }
+        }
+
+        return true;
     }
 
     function _pullFees(
@@ -761,6 +960,87 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    function _getBoostRewardAmount(uint256 boostId) internal view returns(uint256) {
+        PurchasedBoost memory boost = purchasedBoosts[boostId];
+        if(boost.claimed) return 0;
+        if(currentPeriod() < boost.endTimestamp) return 0;
+
+        uint256 boostAmount = boost.amount;
+        uint256 boostDuration = boost.endTimestamp - boost.startTimestamp;
+        uint256 boostDecreaseStep = boostAmount / (boostDuration);
+        uint256 boostPeriodDecrease = boostDecreaseStep * WEEK;
+
+        uint256 rewardAmount;
+
+        uint256 indexDiff;
+        uint256 periodBoostAmount;
+        uint256 endPeriodBoostAmount;
+
+        uint256 period = (boost.startTimestamp / WEEK) * WEEK;
+        uint256 nextPeriod = period + WEEK;
+
+        // 1st period (if incomplete)
+        if(boost.startTimestamp > period) {
+            indexDiff = periodRewardIndex[nextPeriod] - boost.startIndex;
+            uint256 timeDiff = nextPeriod - boost.startTimestamp;
+
+            endPeriodBoostAmount = boostAmount - (boostDecreaseStep * timeDiff);
+
+            periodBoostAmount = endPeriodBoostAmount + ((boostDecreaseStep + (boostDecreaseStep * timeDiff)) / 2);
+
+            rewardAmount += indexDiff * periodBoostAmount;
+
+            boostAmount = endPeriodBoostAmount;
+            period = nextPeriod;
+            nextPeriod = period + WEEK;
+        }
+
+        uint256 nbPeriods = boostDuration / WEEK;
+        // all complete periods
+        for(uint256 j; j < nbPeriods;){
+            indexDiff = periodRewardIndex[nextPeriod] - periodRewardIndex[period];
+
+            endPeriodBoostAmount = boostAmount - (boostDecreaseStep * WEEK);
+
+            periodBoostAmount = endPeriodBoostAmount + ((boostDecreaseStep + boostPeriodDecrease) / 2);
+
+            rewardAmount += indexDiff * periodBoostAmount;
+
+            boostAmount = endPeriodBoostAmount;
+            period = nextPeriod;
+            nextPeriod = period + WEEK;
+
+            unchecked{ ++j; }
+        }
+
+        return rewardAmount;
+    }
+
+    function _claimBoostRewards(uint256 boostId) internal returns(bool) {
+        PurchasedBoost storage boost = purchasedBoosts[boostId];
+
+        require(msg.sender == boost.buyer, "Warden: not buyer");
+        require(!boost.claimed, "Warden: already claimed");
+        require(currentPeriod() < boost.endTimestamp, "Warden: cannot claim");
+
+        uint256 rewardAmount = _getBoostRewardAmount(boostId);
+
+        if(rewardAmount == 0) return true; // nothing to claim, return
+
+        require(
+            rewardAmount <= rewardToken.balanceOf(address(this)),
+            "Warden: Insufficient reward cash"
+        );
+
+        boost.claimed = true;
+
+        rewardToken.safeTransfer(msg.sender, rewardAmount);
+
+        emit ClaimReward(boostId, msg.sender, rewardAmount);
+
+        return true;
+    }
+
     function _getTokenDelegator(uint256 tokenId)
         internal
         pure
@@ -781,6 +1061,48 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     // Admin Functions :
+
+    function startRewardDistribution(
+        address _rewardToken,
+        uint256 _baseWeeklyDropPerVote,
+        uint256 _minWeeklyDropPerVote,
+        uint256 _targetPurchaseAmount
+    ) external onlyOwner {
+        require(_rewardToken != address(0));
+        require(_baseWeeklyDropPerVote != 0 && _minWeeklyDropPerVote != 0 &&  _targetPurchaseAmount != 0);
+        require(_baseWeeklyDropPerVote >= _minWeeklyDropPerVote);
+
+        rewardToken = IERC20(_rewardToken);
+
+        baseWeeklyDropPerVote = _baseWeeklyDropPerVote;
+        minWeeklyDropPerVote = _minWeeklyDropPerVote;
+        targetPurchaseAmount = _targetPurchaseAmount;
+
+        // Initial period and initial index
+        uint256 startPeriod = ((block.timestamp + WEEK) / WEEK) * WEEK;
+        periodRewardIndex[startPeriod] = 0;
+        nextUpdatePeriod = startPeriod;
+
+        //Initial drop
+        periodDropPerVote[startPeriod] = baseWeeklyDropPerVote;
+    }
+
+    function setbaseWeeklyDropPerVote(uint256 newBaseWeeklyDropPerVote) external onlyOwner {
+        require(newBaseWeeklyDropPerVote != 0);
+        require(newBaseWeeklyDropPerVote >= minWeeklyDropPerVote);
+        baseWeeklyDropPerVote = newBaseWeeklyDropPerVote;
+    }
+
+    function setminWeeklyDropPerVote(uint256 newMinWeeklyDropPerVote) external onlyOwner {
+        require(newMinWeeklyDropPerVote != 0);
+        require(baseWeeklyDropPerVote >= newMinWeeklyDropPerVote);
+        minWeeklyDropPerVote = newMinWeeklyDropPerVote;
+    }
+
+    function setTargetPurchaseAmount(uint256 newTargetPurchaseAmount) external onlyOwner {
+        require(newTargetPurchaseAmount != 0);
+        targetPurchaseAmount = newTargetPurchaseAmount;
+    }
 
     /**
      * @notice Updates the minimum percent required to buy a Boost

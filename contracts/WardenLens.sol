@@ -30,6 +30,28 @@ contract WardenLens {
         warden = Warden(_warden);
     }
 
+    function getUserClaimableBoosts(address user) external view returns(uint256[] memory) {
+        uint256[] memory userBoosts = warden.getUserclaimableBoosts(user);
+        uint256 length = userBoosts.length;
+
+        uint256[] memory claimableBoosts = new uint256[](length);
+        uint256 j;
+
+        for(uint256 i; i < length;){
+
+            Warden.PurchasedBoost memory boost = warden.getPurchasedBoost(userBoosts[i]);
+
+            if(!boost.claimed){
+                claimableBoosts[j] = userBoosts[i];
+                j++;
+            }
+
+            unchecked{ ++i; }
+        }
+
+        return claimableBoosts;
+    }
+
     // Check if given delegator could delegate with his minPerc parameter used
     function canDelegate(address delegator) external view returns(bool) {
         ( , , ,uint256 delegatorMinPerc, ) = warden.getOffer(warden.userIndex(delegator));
