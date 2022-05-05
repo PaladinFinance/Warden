@@ -76,30 +76,43 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     bool private _claimBlocked;
 
+    /** @notice Price per vote advised by the maangers for users that don't handle their pricing themselves */
     uint256 public advisedPrice;
 
+    /** @notice Address approved to mamange the advised price */
     mapping(address => bool) public approvedManagers;
 
+    /** @notice Next period to update for the Reward State */
     uint256 public nextUpdatePeriod;
 
+    /** @notice Reward Index by period */
     mapping(uint256 => uint256) public periodRewardIndex;
 
+    /** @notice Base amount of reward to distribute weekly for each veCRV purchased */
     uint256 public baseWeeklyDropPerVote;
 
+    /** @notice Minimum amount of reward to distribute weekly for each veCRV purchased */
     uint256 public minWeeklyDropPerVote;
 
+    /** @notice Target amount of veCRV Boosts to be purchased in a period */
     uint256 public targetPurchaseAmount;
 
+    /** @notice Amount of reward to distribute for the period */
     mapping(uint256 => uint256) public periodDropPerVote;
 
+    /** @notice Amount of veCRV Boosts pruchased for the period */
     mapping(uint256 => uint256) public periodPurchasedAmount;
 
+    /** @notice Decrease of the Purchased amount at the end of the period (since veBoost amounts decrease over time) */
     mapping(uint256 => uint256) public periodEndPurchasedDecrease;
 
+    /** @notice Changes in the periodEndPurchasedDecrease for the period */
     mapping(uint256 => uint256) public periodPurchasedDecreaseChanges;
 
+    /** @notice Amount of rewards paid in extra during last periods */
     uint256 public extraPaidPast;
 
+    /** @notice Reamining rewards not distributed from last periods */
     uint256 public remainingRewardPastPeriod;
 
     struct PurchasedBoost {
@@ -111,10 +124,13 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         bool claimed;
     }
 
+    /** @notice Mapping of a Boost purchase info, stored by the Boost token ID */
     mapping(uint256 => PurchasedBoost) public purchasedBoosts;
 
+    /** @notice List of the Boost purchased by an user */
     mapping(address => uint256[]) public userPurchasedBoosts;
     
+    /** @notice Reward token to distribute to buyers */
     IERC20 public rewardToken;
 
 
@@ -192,14 +208,26 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     // Functions :
 
+    /**
+     * @notice Amount of Offer listed in this market
+     * @dev Amount of Offer listed in this market
+     */
     function offersIndex() external view returns(uint256){
         return offers.length;
     }
 
+    /**
+     * @notice Returns the current period
+     * @dev Calculates and returns the current period based on current timestamp
+     */
     function currentPeriod() public view returns(uint256) {
         return (block.timestamp / WEEK) * WEEK;
     }
 
+    /**
+     * @notice Updates the reward state for all past periods
+     * @dev Updates the reward state for all past periods
+     */
     function updateRewardState() public whenNotPaused returns(bool){
         if(nextUpdatePeriod == 0) return true; // Reward distribution not initialized
         // Updates once a week
@@ -370,6 +398,12 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * @notice Updates an user BoostOffer price parameters
+     * @dev Updates an user BoostOffer price parameters
+     * @param pricePerVote Price of 1 vote per second (in wei)
+     * @param useAdvicePrice Bool: use advised price
+     */
     function updateOfferPrice(
         uint256 pricePerVote,
         bool useAdvicePrice
@@ -395,6 +429,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * @notice Returns the Offer data
+     * @dev Returns the Offer struct from storage
+     * @param index Index of the Offer in the list
+     */
     function getOffer(uint256 index) external view returns(
         address user,
         uint256 pricePerVote,
@@ -776,14 +815,29 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return _claim(msg.sender, amount);
     }
 
+    /**
+     * @notice Get all Boosts purchased by an user
+     * @dev Get all Boosts purchased by an user
+     * @param user Address of the buyer
+     */
     function getUserPurchasedBoosts(address user) external view returns(uint256[] memory) {
         return userPurchasedBoosts[user];
     }
 
+    /**
+     * @notice Get the Purchased Boost data
+     * @dev Get the Purchased Boost struct from storage
+     * @param boostId Id of the veBoost
+     */
     function getPurchasedBoost(uint256 boostId) external view returns(PurchasedBoost memory) {
         return purchasedBoosts[boostId];
     }
 
+    /**
+     * @notice Get the amount of rewards for a Boost
+     * @dev Get the amount of rewards for a Boost
+     * @param boostId Id of the veBoost
+     */
     function getBoostReward(uint256 boostId) external view returns(uint256) {
         require(
             boostId != 0,
@@ -792,6 +846,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return _getBoostRewardAmount(boostId);
     }
 
+    /**
+     * @notice Claim the rewards for a purchased Boost
+     * @dev Claim the rewards for a purchased Boost
+     * @param boostId Id of the veBoost
+     */
     function claimBoostReward(uint256 boostId) external nonReentrant rewardStateUpdate returns(bool) {
         require(
             boostId != 0,
@@ -800,6 +859,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return _claimBoostRewards(boostId);
     }
 
+    /**
+     * @notice Claim the rewards for multiple Boosts
+     * @dev Claim the rewards for multiple Boosts
+     * @param boostIds List of veBoost Ids
+     */
     function claimMultipleBoostReward(uint256[] calldata boostIds) external nonReentrant rewardStateUpdate returns(bool) {
         uint256 length = boostIds.length;
         for(uint256 i; i < length;) {
