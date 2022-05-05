@@ -35,7 +35,7 @@ const config: HardhatUserConfig = {
     hardhat: {
       forking: {
         url: "https://eth-mainnet.alchemyapi.io/v2/" + (process.env.ALCHEMY_API_KEY || ''),
-        blockNumber: 13170000
+        blockNumber: 14706474
       }
     },
     mainnet: {
@@ -64,7 +64,7 @@ const config: HardhatUserConfig = {
     target: "ethers-v5"
   },
   gasReporter: {
-    enabled: true
+    enabled: false
   },
   tenderly: {
     project: process.env.TENDERLY_PROJECT || '',

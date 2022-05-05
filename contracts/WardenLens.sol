@@ -31,7 +31,7 @@ contract WardenLens {
     }
 
     function getUserClaimableBoosts(address user) external view returns(uint256[] memory) {
-        uint256[] memory userBoosts = warden.getUserclaimableBoosts(user);
+        uint256[] memory userBoosts = warden.getUserPurchasedBoosts(user);
         uint256 length = userBoosts.length;
 
         uint256[] memory claimableBoosts = new uint256[](length);

@@ -16,6 +16,7 @@ import { BigNumber } from "@ethersproject/bignumber";
 import {
     advanceTime,
     getERC20,
+    resetFork,
 } from "./utils/utils";
 
 const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VECRV_LOCKING_TIME } = require("./utils/constant");
@@ -48,6 +49,8 @@ describe('Warden contract tests', () => {
     const base_advised_price = BigNumber.from(1.25 * 1e10)
 
     before(async () => {
+        await resetFork();
+
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
