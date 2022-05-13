@@ -1,5 +1,5 @@
 const hre = require("hardhat");
-import { ethers, waffle } from "hardhat";
+import { ethers, network } from "hardhat";
 import chai from "chai";
 import { solidity } from "ethereum-waffle";
 import { Warden } from "../typechain/Warden";
@@ -18,14 +18,24 @@ import { Event } from 'ethers';
 import {
     advanceTime,
     getERC20,
+    resetFork,
 } from "./utils/utils";
 
-const { TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VECRV_LOCKING_TIME } = require("./utils/constant");
+require("dotenv").config();
+
+let constants_path = "./utils/constants" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if(VE_TOKEN === "VEBAL") constants_path = "./utils/balancer-constants"
+
+const { CHAINID, TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VE_LOCKING_TIME } = require(constants_path);
 
 
 chai.use(solidity);
 const { expect } = chai;
 const { provider } = ethers;
+
+const chainId = network.config.chainId;
 
 const unit = ethers.utils.parseEther('1')
 const BPS = 10000
@@ -33,8 +43,11 @@ const BPS = 10000
 let wardenFactory: ContractFactory
 let multiBuyFactory: ContractFactory
 
+let ve_token_name = "veCRV"
+if(VE_TOKEN === "VEBAL") ve_token_name = "veBAL"
 
-describe('Warden MultiBuy contract tests', () => {
+
+describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () => {
     
 
     let admin: SignerWithAddress
@@ -53,12 +66,12 @@ describe('Warden MultiBuy contract tests', () => {
     let warden: Warden
     let multiBuy: WardenMultiBuy
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let feeToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IVotingEscrowDelegation
 
-    const price_per_vote1 = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
-    const price_per_vote2 = BigNumber.from(41.25 * 1e10) // ~ 250CRV for a 1000 veCRV boost for a week
+    const price_per_vote1 = BigNumber.from(8.25 * 1e10) // ~ 50 for a 1000 veToken boost for a week
+    const price_per_vote2 = BigNumber.from(41.25 * 1e10) // ~ 250 for a 1000 veToken boost for a week
     const price_per_vote3 = BigNumber.from(16.5 * 1e10)
     const price_per_vote4 = BigNumber.from(16.5 * 1e8)
     const price_per_vote5 = BigNumber.from(12.375 * 1e10)
@@ -69,6 +82,8 @@ describe('Warden MultiBuy contract tests', () => {
     const base_advised_price = BigNumber.from(7.25 * 1e10)
 
     before(async () => {
+        await resetFork(chainId, VE_TOKEN);
+
         [
             admin,
             delegator1,
@@ -87,51 +102,94 @@ describe('Warden MultiBuy contract tests', () => {
         wardenFactory = await ethers.getContractFactory("Warden");
         multiBuyFactory = await ethers.getContractFactory("WardenMultiBuy");
 
-        const crv_amount = ethers.utils.parseEther('8000');
+        const fee_token_amount = ethers.utils.parseEther('8000');
         const lock_amount = ethers.utils.parseEther('2000'); //change the lock amounts
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
 
-        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS[chainId], provider);
 
-        await getERC20(admin, BIG_HOLDER, CRV, admin.address, crv_amount);
+        await getERC20(admin, BIG_HOLDER[chainId], feeToken, admin.address, fee_token_amount);
 
+        if(VE_TOKEN === "VECRV"){
+            //split between all delegators
+            await feeToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await feeToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await feeToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await feeToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await feeToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await feeToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await feeToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await feeToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
 
-        //split between all delegators
-        await CRV.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
-        await CRV.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
-        await CRV.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
-        await CRV.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
-        await CRV.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
-        await CRV.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
-        await CRV.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
-        await CRV.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
+            await feeToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await feeToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await feeToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await feeToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await feeToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await feeToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await feeToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await feeToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
 
-        await CRV.connect(delegator1).approve(veCRV.address, ethers.utils.parseEther('200'));
-        await CRV.connect(delegator2).approve(veCRV.address, ethers.utils.parseEther('350'));
-        await CRV.connect(delegator3).approve(veCRV.address, ethers.utils.parseEther('275'));
-        await CRV.connect(delegator4).approve(veCRV.address, ethers.utils.parseEther('250'));
-        await CRV.connect(delegator5).approve(veCRV.address, ethers.utils.parseEther('100'));
-        await CRV.connect(delegator6).approve(veCRV.address, ethers.utils.parseEther('150'));
-        await CRV.connect(delegator7).approve(veCRV.address, ethers.utils.parseEther('500'));
-        await CRV.connect(delegator8).approve(veCRV.address, ethers.utils.parseEther('175'));
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
 
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
-        const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
+            await veToken.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
+            await veToken.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
+            await veToken.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
+            await veToken.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
+            await veToken.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
+            await veToken.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
+            await veToken.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
+            await veToken.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
 
-        await veCRV.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
-        await veCRV.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
-        await veCRV.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
-        await veCRV.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
-        await veCRV.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
-        await veCRV.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
-        await veCRV.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
-        await veCRV.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
+            await feeToken.connect(admin).transfer(receiver.address, fee_token_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
+            await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+        } else if(VE_TOKEN === "VEBAL"){
+            const { BPT_TOKEN_ADDRESS, BPT_TOKEN_HOLDER } = require(constants_path);
 
-        await CRV.connect(admin).transfer(receiver.address, crv_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
-        await CRV.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+            let bptToken: IERC20
+            bptToken = IERC20__factory.connect(BPT_TOKEN_ADDRESS[chainId], provider);
+
+            await getERC20(admin, BPT_TOKEN_HOLDER[chainId], bptToken, admin.address, lock_amount);
+
+            //split between all delegators
+            await bptToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await bptToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await bptToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await bptToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await bptToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await bptToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await bptToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await bptToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
+
+            await bptToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await bptToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await bptToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await bptToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await bptToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await bptToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await bptToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await bptToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
+
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
+
+            await veToken.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
+            await veToken.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
+            await veToken.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
+            await veToken.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
+            await veToken.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
+            await veToken.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
+            await veToken.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
+            await veToken.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
+
+            await feeToken.connect(admin).transfer(receiver.address, fee_token_amount.sub(ethers.utils.parseEther('1000')));
+            await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+
+        }
 
     });
 
@@ -139,8 +197,8 @@ describe('Warden MultiBuy contract tests', () => {
     beforeEach(async () => {
 
         warden = (await wardenFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            feeToken.address,
+            veToken.address,
             delegationBoost.address,
             500, //5%
             1000, //10%
@@ -149,8 +207,8 @@ describe('Warden MultiBuy contract tests', () => {
         await warden.deployed();
 
         multiBuy = (await multiBuyFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            feeToken.address,
+            veToken.address,
             delegationBoost.address,
             warden.address
         )) as WardenMultiBuy;
@@ -174,7 +232,7 @@ describe('Warden MultiBuy contract tests', () => {
         await warden.connect(delegator7).register(price_per_vote7, 10, 2000, 10000, false);
         await warden.connect(delegator8).register(price_per_vote8, 9, 1500, 7500, false);
 
-        await CRV.connect(receiver).approve(multiBuy.address, ethers.constants.MaxUint256)
+        await feeToken.connect(receiver).approve(multiBuy.address, ethers.constants.MaxUint256)
     });
 
     it(' should be deployed & have correct parameters', async () => {
@@ -185,8 +243,8 @@ describe('Warden MultiBuy contract tests', () => {
         const multiBuy_delegationBoost = await multiBuy.delegationBoost();
         const multiBuy_warden = await multiBuy.warden();
 
-        expect(multiBuy_feeToken).to.be.eq(CRV.address);
-        expect(multiBuy_votingEscrow).to.be.eq(veCRV.address);
+        expect(multiBuy_feeToken).to.be.eq(feeToken.address);
+        expect(multiBuy_votingEscrow).to.be.eq(veToken.address);
         expect(multiBuy_delegationBoost).to.be.eq(delegationBoost.address);
         expect(multiBuy_warden).to.be.eq(warden.address);
 
@@ -299,9 +357,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -370,9 +428,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -443,9 +501,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -589,9 +647,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(other_amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -600,8 +658,8 @@ describe('Warden MultiBuy contract tests', () => {
         });
 
         it(' should return unused fee tokens to the buyer', async () => {
-            const old_balance = await CRV.balanceOf(receiver.address)
-            const old_balance_multiBuy = await CRV.balanceOf(multiBuy.address)
+            const old_balance = await feeToken.balanceOf(receiver.address)
+            const old_balance_multiBuy = await feeToken.balanceOf(multiBuy.address)
 
             const buy_tx = await multiBuy.connect(receiver).simpleMultiBuy(
                 receiver.address,
@@ -629,8 +687,8 @@ describe('Warden MultiBuy contract tests', () => {
                 effective_paid_fees = effective_paid_fees.add(e.paidFeeAmount)
             }
 
-            const new_balance = await CRV.balanceOf(receiver.address)
-            const new_balance_multiBuy = await CRV.balanceOf(multiBuy.address)
+            const new_balance = await feeToken.balanceOf(receiver.address)
+            const new_balance_multiBuy = await feeToken.balanceOf(multiBuy.address)
 
             expect(new_balance).to.be.eq(old_balance.sub(effective_paid_fees))
             expect(new_balance_multiBuy).to.be.eq(old_balance_multiBuy)
@@ -644,7 +702,7 @@ describe('Warden MultiBuy contract tests', () => {
         it(' should take all available amount if Boosts already taken on Offers', async () => {
             const boost_buy_percent = 2000
 
-            await CRV.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
 
             const fee_amount1 = await warden.estimateFees(delegator1.address, boost_buy_percent, duration)
             const fee_amount2 = await warden.estimateFees(delegator2.address, boost_buy_percent, duration)
@@ -715,9 +773,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             await delegationBoost.connect(receiver2).cancel_boost(token_id1)
@@ -791,9 +849,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(slightly_bigger_amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -864,9 +922,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -995,7 +1053,7 @@ describe('Warden MultiBuy contract tests', () => {
             
             const boost_buy_percent = 2000
 
-            await CRV.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
 
             const fee_amount1 = await warden.estimateFees(delegator1.address, boost_buy_percent, duration)
             const fee_amount2 = await warden.estimateFees(delegator2.address, boost_buy_percent, duration)
@@ -1077,9 +1135,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(other_amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             await delegationBoost.connect(receiver2).cancel_boost(token_id1)
@@ -1105,7 +1163,7 @@ describe('Warden MultiBuy contract tests', () => {
         const incorrect_fee_amount = amount.mul(max_price.div(5)).mul(one_week.mul(duration)).div(unit)
         const bigger_fee_amount = bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
-        const accepted_slippage = 10 // 0.1 %
+        const accepted_slippage = 100 // 1 %
 
         const minRequiredAmount = BigNumber.from(0)
         const bigger_minRequiredAmount = ethers.utils.parseEther('200')
@@ -1178,9 +1236,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){
@@ -1444,9 +1502,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 for(let e of events){
@@ -1523,9 +1581,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 for(let e of events){
@@ -1609,9 +1667,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(other_amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 for(let e of events){
@@ -1620,8 +1678,8 @@ describe('Warden MultiBuy contract tests', () => {
             });
     
             it(' should return unused fee tokens to the buyer', async () => {
-                const old_balance = await CRV.balanceOf(receiver.address)
-                const old_balance_multiBuy = await CRV.balanceOf(multiBuy.address)
+                const old_balance = await feeToken.balanceOf(receiver.address)
+                const old_balance_multiBuy = await feeToken.balanceOf(multiBuy.address)
     
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
                     receiver.address,
@@ -1650,8 +1708,8 @@ describe('Warden MultiBuy contract tests', () => {
                     effective_paid_fees = effective_paid_fees.add(e.paidFeeAmount)
                 }
     
-                const new_balance = await CRV.balanceOf(receiver.address)
-                const new_balance_multiBuy = await CRV.balanceOf(multiBuy.address)
+                const new_balance = await feeToken.balanceOf(receiver.address)
+                const new_balance_multiBuy = await feeToken.balanceOf(multiBuy.address)
     
                 expect(new_balance).to.be.eq(old_balance.sub(effective_paid_fees))
                 expect(new_balance_multiBuy).to.be.eq(old_balance_multiBuy)
@@ -1665,7 +1723,7 @@ describe('Warden MultiBuy contract tests', () => {
             it(' should take all available amount if Boosts already taken on Offers', async () => {
                 const boost_buy_percent = 2000
     
-                await CRV.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
+                await feeToken.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
     
                 const fee_amount1 = await warden.estimateFees(delegator7.address, boost_buy_percent, duration)
                 const fee_amount2 = await warden.estimateFees(delegator8.address, boost_buy_percent, duration)
@@ -1746,9 +1804,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(other_amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 await delegationBoost.connect(receiver2).cancel_boost(token_id1)
@@ -1831,9 +1889,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(slightly_bigger_amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 for(let e of events){
@@ -1914,9 +1972,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(slightly_smaller_amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 for(let e of events){
@@ -1965,7 +2023,7 @@ describe('Warden MultiBuy contract tests', () => {
                 
                 const boost_buy_percent = 2000
     
-                await CRV.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
+                await feeToken.connect(receiver2).approve(warden.address, ethers.constants.MaxUint256)
     
                 const fee_amount1 = await warden.estimateFees(delegator7.address, boost_buy_percent, duration)
                 const fee_amount2 = await warden.estimateFees(delegator8.address, boost_buy_percent, duration)
@@ -1986,7 +2044,7 @@ describe('Warden MultiBuy contract tests', () => {
                 const tx_timestamp = (await ethers.provider.getBlock((await buy_2_tx).blockNumber || 0)).timestamp
                 await advanceTime(boost_cancel_time.sub(tx_timestamp).toNumber())
     
-                const other_amount = ethers.utils.parseEther('600')
+                const other_amount = ethers.utils.parseEther('750')
     
                 const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
     
@@ -2012,7 +2070,7 @@ describe('Warden MultiBuy contract tests', () => {
                 const buy_logs = receipt.logs.filter(x => x.topics.indexOf(topic) >= 0);
                 const events = buy_logs.map((log) => (iface.parseLog(log)).args)
     
-                const expected_offers_indexes_order = [7,8] // Expected Offers to have been used by the multiBuy
+                const expected_offers_indexes_order = [7,8,1] // Expected Offers to have been used by the multiBuy
                 let effective_total_boost_amount = BigNumber.from(0)
     
                 const expected_total_boost_amount_with_slippage = other_amount.mul(BPS - accepted_slippage).div(BPS)
@@ -2053,9 +2111,9 @@ describe('Warden MultiBuy contract tests', () => {
                 expect(effective_total_boost_amount).to.be.lte(other_amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
-                const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-                const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-                expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+                const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+                const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+                expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
     
                 //close all the Boosts for next tests
                 await delegationBoost.connect(receiver2).cancel_boost(token_id1)
@@ -2153,9 +2211,9 @@ describe('Warden MultiBuy contract tests', () => {
             expect(effective_total_boost_amount).to.be.lte(amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
-            const veCRV_balance_receiver = await veCRV.balanceOf(receiver.address, { blockTag: tx_block })
-            const veCRV_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
-            expect(veCRV_adjusted_receiver).to.be.eq(veCRV_balance_receiver.add(effective_total_boost_amount))
+            const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
+            const veToken_adjusted_receiver = await delegationBoost.adjusted_balance_of(receiver.address, { blockTag: tx_block })
+            expect(veToken_adjusted_receiver).to.be.eq(veToken_balance_receiver.add(effective_total_boost_amount))
 
             //close all the Boosts for next tests
             for(let e of events){

@@ -1,5 +1,5 @@
 const hre = require("hardhat");
-import { ethers, waffle } from "hardhat";
+import { ethers, network } from "hardhat";
 import chai from "chai";
 import { solidity } from "ethereum-waffle";
 import { Warden } from "../../typechain/Warden";
@@ -19,33 +19,37 @@ import {
     resetFork,
 } from "../utils/utils";
 
-const {
-    TOKEN_ADDRESS,
-    VOTING_ESCROW_ADDRESS,
-    BOOST_DELEGATION_ADDRESS,
-    BIG_HOLDER,
-    VECRV_LOCKING_TIME,
-    PAL_TOKEN_ADDRESS,
-    PAL_HOLDER
-} = require("../utils/constant");
+require("dotenv").config();
+
+let constants_path = "../utils/constants" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if (VE_TOKEN === "VEBAL") constants_path = "../utils/balancer-constants"
+
+const { CHAINID, TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VE_LOCKING_TIME, REWARD_TOKEN_ADDRESS, REWARD_HOLDER } = require(constants_path);
 
 
 chai.use(solidity);
 const { expect } = chai;
 const { provider } = ethers;
 
+const chainId = network.config.chainId;
+
 const WEEK = 7 * 86400;
-const UNIT =ethers.utils.parseEther('1')
+const UNIT = ethers.utils.parseEther('1')
 
 let wardenFactory: ContractFactory
 
 const baseDropPerVote = ethers.utils.parseEther('0.005')
 const minDropPerVote = ethers.utils.parseEther('0.001')
 
-const targetPurchaseAmount = ethers.utils.parseEther('500000')
+const targetPurchaseAmount = ethers.utils.parseEther('50000')
+
+let ve_token_name = "veCRV"
+if (VE_TOKEN === "VEBAL") ve_token_name = "veBAL"
 
 
-describe('Warden rewards tests', () => {
+describe('Warden rewards tests - ' + ve_token_name + ' version', () => {
     let admin: SignerWithAddress
     let reserveManager: SignerWithAddress
     let priceManager: SignerWithAddress
@@ -55,8 +59,8 @@ describe('Warden rewards tests', () => {
 
     let warden: Warden
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let feeToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IVotingEscrowDelegation
 
     let rewardToken: IERC20
@@ -67,51 +71,93 @@ describe('Warden rewards tests', () => {
 
     const total_reward_amount = ethers.utils.parseEther('20000');
 
+    const lock_amount = ethers.utils.parseEther('250000');
+
     before(async () => {
-        await resetFork();
+        await resetFork(chainId, VE_TOKEN);
 
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const crv_amount = ethers.utils.parseEther('4000000');
-        const lock_amount = ethers.utils.parseEther('2500000');
+        const fee_token_amount = ethers.utils.parseEther('400000');
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
 
-        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS[chainId], provider);
 
-        rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
+        rewardToken = IERC20__factory.connect(REWARD_TOKEN_ADDRESS[chainId], provider);
 
-        await getERC20(admin, BIG_HOLDER, CRV, delegator.address, crv_amount);
+        await getERC20(admin, BIG_HOLDER[chainId], feeToken, delegator.address, fee_token_amount);
 
-        await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('2500000'));
+        await getERC20(admin, REWARD_HOLDER[chainId], rewardToken, admin.address, ethers.utils.parseEther('2500000'));
 
-        await CRV.connect(delegator).approve(veCRV.address, 0);
-        await CRV.connect(delegator).approve(veCRV.address, crv_amount);
-        const locked_balance = (await veCRV.locked(delegator.address)).amount
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
-        if (locked_balance.eq(0)) {
-            await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
-        } else if (locked_balance.lt(lock_amount)) {
-            await veCRV.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
-        } else {
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
+        if (VE_TOKEN === "VECRV") {
+            await feeToken.connect(delegator).approve(veToken.address, 0);
+            await feeToken.connect(delegator).approve(veToken.address, ethers.constants.MaxUint256);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount.sub(lock_amount));
+        } else if (VE_TOKEN === "VEBAL") {
+            const { BPT_TOKEN_ADDRESS, BPT_TOKEN_HOLDER } = require(constants_path);
+
+            let bptToken: IERC20
+            bptToken = IERC20__factory.connect(BPT_TOKEN_ADDRESS[chainId], provider);
+
+            await getERC20(admin, BPT_TOKEN_HOLDER[chainId], bptToken, delegator.address, lock_amount);
+
+            await bptToken.connect(delegator).approve(veToken.address, ethers.constants.MaxUint256);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount);
         }
 
-        await CRV.connect(delegator).transfer(receiver.address, crv_amount.sub(lock_amount));
-
     })
+
+    const resetVeLock = async (force: boolean = false) => {
+        const current_ts = BigNumber.from((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+        const lock_time = (current_ts.add(VE_LOCKING_TIME)).div(WEEK).mul(WEEK)
+        const current_unlock_time = await veToken.locked__end(delegator.address)
+
+        if (current_unlock_time.lt(lock_time)) {
+            const new_current_ts = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp
+            if (current_unlock_time.lte(new_current_ts)) {
+                await veToken.connect(delegator).withdraw()
+                await veToken.connect(delegator).create_lock(lock_amount, (BigNumber.from(new_current_ts).add(VE_LOCKING_TIME)).div(WEEK).mul(WEEK));
+            }
+            else if(force){
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+        }
+
+    }
 
 
     beforeEach(async () => {
 
         warden = (await wardenFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            feeToken.address,
+            veToken.address,
             delegationBoost.address,
             500, //5%
             1000, //10%
@@ -122,6 +168,8 @@ describe('Warden rewards tests', () => {
         await delegationBoost.connect(delegator).setApprovalForAll(warden.address, true);
 
         await rewardToken.connect(admin).transfer(warden.address, total_reward_amount)
+
+        await resetVeLock();
     });
 
 
@@ -136,8 +184,8 @@ describe('Warden rewards tests', () => {
         const warden_reserveAmount = await warden.reserveAmount();
         const warden_reserveManager = await warden.reserveManager();
 
-        expect(warden_feeToken).to.be.eq(CRV.address);
-        expect(warden_votingEscrow).to.be.eq(veCRV.address);
+        expect(warden_feeToken).to.be.eq(feeToken.address);
+        expect(warden_votingEscrow).to.be.eq(veToken.address);
         expect(warden_delegationBoost).to.be.eq(delegationBoost.address);
         expect(warden_feeReserveRatio).to.be.eq(500);
         expect(warden_minPercRequired).to.be.eq(1000);
@@ -220,7 +268,7 @@ describe('Warden rewards tests', () => {
 
         beforeEach(async () => {
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
         });
 
@@ -385,9 +433,9 @@ describe('Warden rewards tests', () => {
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
-            
+
             await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount)
-            
+
             const token_id = await delegationBoost.get_token_id(
                 delegator.address,
                 (await delegationBoost.total_minted(delegator.address)).sub(1)
@@ -529,7 +577,7 @@ describe('Warden rewards tests', () => {
             expect(await warden.currentPeriod()).to.be.eq(next_period);
 
             const undistributed_rewards = targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)
-            
+
             expect(await warden.nextUpdatePeriod()).to.be.eq(next_period);
             expect(await warden.extraPaidPast()).to.be.eq(0);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_rewards);
@@ -560,13 +608,13 @@ describe('Warden rewards tests', () => {
 
 
     describe('updateRewardState', async () => {
-        
+
         const min_perc = 2000
         const max_perc = 10000
 
         const max_duration = 10
 
-        const buy_percent = 5000
+        const buy_percent = 2500
         const duration = 2
 
         let fee_amount: BigNumber;
@@ -580,9 +628,11 @@ describe('Warden rewards tests', () => {
                 targetPurchaseAmount
             )
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
             await advanceTime(WEEK)
+
+            await resetVeLock();
 
         });
 
@@ -600,7 +650,7 @@ describe('Warden rewards tests', () => {
             expect(await warden.currentPeriod()).to.be.eq(next_period);
 
             const undistributed_rewards = targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)
-            
+
             expect(await warden.nextUpdatePeriod()).to.be.eq(next_period);
             expect(await warden.extraPaidPast()).to.be.eq(0);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_rewards);
@@ -633,7 +683,7 @@ describe('Warden rewards tests', () => {
             expect(await warden.currentPeriod()).to.be.eq(next_period2);
 
             const undistributed_rewards = targetPurchaseAmount.mul(baseDropPerVote).div(UNIT).mul(2)
-            
+
             expect(await warden.nextUpdatePeriod()).to.be.eq(next_period2);
             expect(await warden.extraPaidPast()).to.be.eq(0);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_rewards);
@@ -666,7 +716,7 @@ describe('Warden rewards tests', () => {
             await warden.connect(admin).updateRewardState()
 
             expect(await warden.currentPeriod()).to.be.eq(current_period.add(WEEK * 10));
-            
+
             expect(await warden.nextUpdatePeriod()).to.be.eq(current_period.add(WEEK * 10));
 
             let period = current_period
@@ -680,9 +730,9 @@ describe('Warden rewards tests', () => {
 
             const weekly_drop = targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)
 
-            for(let i = 0; i < 10; i++){
+            for (let i = 0; i < 10; i++) {
 
-                undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)) 
+                undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT))
 
                 const estimated_drop = weekly_drop.add(undistributed_amount).mul(UNIT).div(targetPurchaseAmount)
 
@@ -701,7 +751,7 @@ describe('Warden rewards tests', () => {
                 next_period = period.add(WEEK)
 
             }
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -729,12 +779,12 @@ describe('Warden rewards tests', () => {
             let extra_paid = BigNumber.from(0)
 
             const weekly_drop = targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)
-            
+
             expect(await warden.nextUpdatePeriod()).to.be.eq(current_period.add(WEEK * 100));
 
-            for(let i = 0; i < 100; i++){
+            for (let i = 0; i < 100; i++) {
 
-                undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)) 
+                undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT))
 
                 const estimated_drop = weekly_drop.add(undistributed_amount).mul(UNIT).div(targetPurchaseAmount)
 
@@ -753,7 +803,7 @@ describe('Warden rewards tests', () => {
                 next_period = period.add(WEEK)
 
             }
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -766,12 +816,12 @@ describe('Warden rewards tests', () => {
 
 
             await warden.connect(admin).updateRewardState()
-            
+
             expect(await warden.nextUpdatePeriod()).to.be.eq(current_period.add(WEEK * 150));
 
-            for(let i = 0; i < 50; i++){
+            for (let i = 0; i < 50; i++) {
 
-                undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)) 
+                undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT))
 
                 const estimated_drop = weekly_drop.add(undistributed_amount).mul(UNIT).div(targetPurchaseAmount)
 
@@ -790,7 +840,7 @@ describe('Warden rewards tests', () => {
                 next_period = period.add(WEEK)
 
             }
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -819,7 +869,7 @@ describe('Warden rewards tests', () => {
 
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-            undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)) 
+            undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT))
 
             estimated_drop = weekly_drop.add(undistributed_amount).mul(UNIT).div(targetPurchaseAmount)
 
@@ -836,7 +886,7 @@ describe('Warden rewards tests', () => {
 
             period = next_period
             next_period = period.add(WEEK)
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -851,15 +901,15 @@ describe('Warden rewards tests', () => {
 
             period_purchased_amount = (await warden.periodPurchasedAmount(period)).mul(prev_drop_per_vote).div(UNIT)
 
-            if(period_purchased_amount.lte(weekly_drop)){
+            if (period_purchased_amount.lte(weekly_drop)) {
                 let not_disitrubted = weekly_drop.sub(period_purchased_amount)
 
-                if(!extra_paid.eq(0)){
-                    if(not_disitrubted.gte(extra_paid)){
+                if (!extra_paid.eq(0)) {
+                    if (not_disitrubted.gte(extra_paid)) {
                         not_disitrubted = not_disitrubted.sub(extra_paid)
                         extra_paid = BigNumber.from(0)
                     }
-                    else{
+                    else {
                         extra_paid = extra_paid.sub(not_disitrubted)
                         not_disitrubted = BigNumber.from(0)
                     }
@@ -868,12 +918,12 @@ describe('Warden rewards tests', () => {
             } else {
                 let extra_disitrubted = period_purchased_amount.sub(weekly_drop)
 
-                if(!undistributed_amount.eq(0)){
-                    if(extra_disitrubted.gte(undistributed_amount)){
+                if (!undistributed_amount.eq(0)) {
+                    if (extra_disitrubted.gte(undistributed_amount)) {
                         extra_disitrubted = extra_disitrubted.sub(undistributed_amount)
                         undistributed_amount = BigNumber.from(0)
                     }
-                    else{
+                    else {
                         undistributed_amount = undistributed_amount.sub(extra_disitrubted)
                         extra_disitrubted = BigNumber.from(0)
                     }
@@ -896,7 +946,7 @@ describe('Warden rewards tests', () => {
 
             period = next_period
             next_period = period.add(WEEK)
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -906,15 +956,15 @@ describe('Warden rewards tests', () => {
 
             period_purchased_amount = (await warden.periodPurchasedAmount(period)).mul(prev_drop_per_vote).div(UNIT)
 
-            if(period_purchased_amount.lte(weekly_drop)){
+            if (period_purchased_amount.lte(weekly_drop)) {
                 let not_disitrubted = weekly_drop.sub(period_purchased_amount)
 
-                if(!extra_paid.eq(0)){
-                    if(not_disitrubted.gte(extra_paid)){
+                if (!extra_paid.eq(0)) {
+                    if (not_disitrubted.gte(extra_paid)) {
                         not_disitrubted = not_disitrubted.sub(extra_paid)
                         extra_paid = BigNumber.from(0)
                     }
-                    else{
+                    else {
                         extra_paid = extra_paid.sub(not_disitrubted)
                         not_disitrubted = BigNumber.from(0)
                     }
@@ -923,12 +973,12 @@ describe('Warden rewards tests', () => {
             } else {
                 let extra_disitrubted = period_purchased_amount.sub(weekly_drop)
 
-                if(!undistributed_amount.eq(0)){
-                    if(extra_disitrubted.gte(undistributed_amount)){
+                if (!undistributed_amount.eq(0)) {
+                    if (extra_disitrubted.gte(undistributed_amount)) {
                         extra_disitrubted = extra_disitrubted.sub(undistributed_amount)
                         undistributed_amount = BigNumber.from(0)
                     }
-                    else{
+                    else {
                         undistributed_amount = undistributed_amount.sub(extra_disitrubted)
                         extra_disitrubted = BigNumber.from(0)
                     }
@@ -951,7 +1001,7 @@ describe('Warden rewards tests', () => {
 
             period = next_period
             next_period = period.add(WEEK)
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -961,15 +1011,15 @@ describe('Warden rewards tests', () => {
 
             period_purchased_amount = (await warden.periodPurchasedAmount(period)).mul(prev_drop_per_vote).div(UNIT)
 
-            if(period_purchased_amount.lte(weekly_drop)){
+            if (period_purchased_amount.lte(weekly_drop)) {
                 let not_disitrubted = weekly_drop.sub(period_purchased_amount)
 
-                if(!extra_paid.eq(0)){
-                    if(not_disitrubted.gte(extra_paid)){
+                if (!extra_paid.eq(0)) {
+                    if (not_disitrubted.gte(extra_paid)) {
                         not_disitrubted = not_disitrubted.sub(extra_paid)
                         extra_paid = BigNumber.from(0)
                     }
-                    else{
+                    else {
                         extra_paid = extra_paid.sub(not_disitrubted)
                         not_disitrubted = BigNumber.from(0)
                     }
@@ -978,12 +1028,12 @@ describe('Warden rewards tests', () => {
             } else {
                 let extra_disitrubted = period_purchased_amount.sub(weekly_drop)
 
-                if(!undistributed_amount.eq(0)){
-                    if(extra_disitrubted.gte(undistributed_amount)){
+                if (!undistributed_amount.eq(0)) {
+                    if (extra_disitrubted.gte(undistributed_amount)) {
                         extra_disitrubted = extra_disitrubted.sub(undistributed_amount)
                         undistributed_amount = BigNumber.from(0)
                     }
-                    else{
+                    else {
                         undistributed_amount = undistributed_amount.sub(extra_disitrubted)
                         extra_disitrubted = BigNumber.from(0)
                     }
@@ -1006,7 +1056,7 @@ describe('Warden rewards tests', () => {
 
             period = next_period
             next_period = period.add(WEEK)
-            
+
             expect(await warden.extraPaidPast()).to.be.eq(extra_paid);
             expect(await warden.remainingRewardPastPeriod()).to.be.eq(undistributed_amount);
 
@@ -1019,7 +1069,7 @@ describe('Warden rewards tests', () => {
 
 
     describe('drop per period updates', async () => {
-        
+
         const min_perc = 1000
         const max_perc = 10000
 
@@ -1027,20 +1077,24 @@ describe('Warden rewards tests', () => {
 
         let fee_amount: BigNumber;
 
-        const new_targetPurchaseAmount = ethers.utils.parseEther('150000')
+        const new_targetPurchaseAmount = ethers.utils.parseEther('15000')
 
         beforeEach(async () => {
+
+            let custom_targetPurchaseAmount: BigNumber
+            if(VE_TOKEN === "VECRV") custom_targetPurchaseAmount = new_targetPurchaseAmount
+            if(VE_TOKEN === "VEBAL") custom_targetPurchaseAmount = targetPurchaseAmount
 
             await warden.connect(admin).startRewardDistribution(
                 rewardToken.address,
                 baseDropPerVote,
                 minDropPerVote,
-                new_targetPurchaseAmount
+                custom_targetPurchaseAmount
             )
 
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
             await advanceTime(WEEK)
 
@@ -1055,7 +1109,7 @@ describe('Warden rewards tests', () => {
 
             const needed_amount = objective_amount.add(objective_amount.div(2)).add(current_remaining).sub(current_extra)
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
 
             const buy_percent = needed_amount.mul(10000).div(delegator_balance)
             const duration = 3
@@ -1098,7 +1152,7 @@ describe('Warden rewards tests', () => {
 
             const needed_amount = objective_amount.add(objective_amount).add(current_remaining).sub(current_extra)
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
 
             const buy_percent = needed_amount.mul(10000).div(delegator_balance)
             const duration = 3
@@ -1134,7 +1188,7 @@ describe('Warden rewards tests', () => {
 
             const needed_amount = objective_amount.sub(objective_amount.div(2)).add(current_remaining).sub(current_extra)
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address)
+            const delegator_balance = await veToken.balanceOf(delegator.address)
 
             const buy_percent = needed_amount.mul(10000).div(delegator_balance)
             const duration = 3
@@ -1178,9 +1232,9 @@ describe('Warden rewards tests', () => {
             let current_period = await warden.currentPeriod()
             let current_purchased_amount = await warden.periodPurchasedAmount(current_period)
 
-            let needed_amount = objective_amount.div(4).sub(current_extra)
+            let needed_amount = objective_amount.div(5).mul(2).sub(current_extra)
 
-            let delegator_balance = await veCRV.balanceOf(delegator.address)
+            let delegator_balance = await veToken.balanceOf(delegator.address)
 
             let buy_percent = needed_amount.mul(10000).div(delegator_balance)
             let duration = 2
@@ -1217,7 +1271,7 @@ describe('Warden rewards tests', () => {
                 objective_amount.div(10)
             ).add(current_remaining).sub(current_extra)
 
-            delegator_balance = await veCRV.balanceOf(delegator.address)
+            delegator_balance = await veToken.balanceOf(delegator.address)
 
             buy_percent = needed_amount.mul(10000).div(delegator_balance)
             duration = 3
@@ -1262,7 +1316,7 @@ describe('Warden rewards tests', () => {
 
             let needed_amount = objective_amount.div(2).add(current_remaining).sub(current_extra)
 
-            let delegator_balance = await veCRV.balanceOf(delegator.address)
+            let delegator_balance = await veToken.balanceOf(delegator.address)
 
             let buy_percent = needed_amount.mul(10000).div(delegator_balance)
             let duration = 2

@@ -1,5 +1,5 @@
 const hre = require("hardhat");
-import { ethers, waffle } from "hardhat";
+import { ethers, network } from "hardhat";
 import chai from "chai";
 import { solidity } from "ethereum-waffle";
 import { Warden } from "../../typechain/Warden";
@@ -19,33 +19,38 @@ import {
     resetFork,
 } from "../utils/utils";
 
-const {
-    TOKEN_ADDRESS,
-    VOTING_ESCROW_ADDRESS,
-    BOOST_DELEGATION_ADDRESS,
-    BIG_HOLDER,
-    VECRV_LOCKING_TIME,
-    PAL_TOKEN_ADDRESS,
-    PAL_HOLDER
-} = require("../utils/constant");
+require("dotenv").config();
+
+let constants_path = "../utils/constants" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if (VE_TOKEN === "VEBAL") constants_path = "../utils/balancer-constants"
+
+const { CHAINID, TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VE_LOCKING_TIME, REWARD_TOKEN_ADDRESS, REWARD_HOLDER } = require(constants_path);
+
 
 
 chai.use(solidity);
 const { expect } = chai;
 const { provider } = ethers;
 
+const chainId = network.config.chainId;
+
 const WEEK = 7 * 86400;
-const UNIT =ethers.utils.parseEther('1')
+const UNIT = ethers.utils.parseEther('1')
 
 let wardenFactory: ContractFactory
 
 const baseDropPerVote = ethers.utils.parseEther('0.005')
 const minDropPerVote = ethers.utils.parseEther('0.001')
 
-const targetPurchaseAmount = ethers.utils.parseEther('500000')
+const targetPurchaseAmount = ethers.utils.parseEther('5000')
+
+let ve_token_name = "veCRV"
+if (VE_TOKEN === "VEBAL") ve_token_name = "veBAL"
 
 
-describe('Warden rewards tests - part 2', () => {
+describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => {
     let admin: SignerWithAddress
     let reserveManager: SignerWithAddress
     let priceManager: SignerWithAddress
@@ -55,8 +60,8 @@ describe('Warden rewards tests - part 2', () => {
 
     let warden: Warden
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let feeToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IVotingEscrowDelegation
 
     let rewardToken: IERC20
@@ -67,51 +72,92 @@ describe('Warden rewards tests - part 2', () => {
 
     const total_reward_amount = ethers.utils.parseEther('200000');
 
+    const lock_amount = ethers.utils.parseEther('15000');
+
     before(async () => {
-        await resetFork();
+        await resetFork(chainId, VE_TOKEN);
 
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const crv_amount = ethers.utils.parseEther('3000000');
-        const lock_amount = ethers.utils.parseEther('1500000');
+        const fee_token_amount = ethers.utils.parseEther('30000');
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
 
-        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS[chainId], provider);
 
-        rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
+        rewardToken = IERC20__factory.connect(REWARD_TOKEN_ADDRESS[chainId], provider);
 
-        await getERC20(admin, BIG_HOLDER, CRV, delegator.address, crv_amount);
+        await getERC20(admin, BIG_HOLDER[chainId], feeToken, delegator.address, fee_token_amount);
 
-        await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('25000000'));
+        await getERC20(admin, REWARD_HOLDER[chainId], rewardToken, admin.address, ethers.utils.parseEther('25000000'));
 
-        await CRV.connect(delegator).approve(veCRV.address, 0);
-        await CRV.connect(delegator).approve(veCRV.address, crv_amount);
-        const locked_balance = (await veCRV.locked(delegator.address)).amount
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
-        if (locked_balance.eq(0)) {
-            await veCRV.connect(delegator).create_lock(lock_amount, lock_time);
-        } else if (locked_balance.lt(lock_amount)) {
-            await veCRV.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
-        } else {
-            await veCRV.connect(delegator).increase_unlock_time(lock_time);
+        if (VE_TOKEN === "VECRV") {
+            await feeToken.connect(delegator).approve(veToken.address, 0);
+            await feeToken.connect(delegator).approve(veToken.address, ethers.constants.MaxUint256);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount.sub(lock_amount));
+        } else if (VE_TOKEN === "VEBAL") {
+            const { BPT_TOKEN_ADDRESS, BPT_TOKEN_HOLDER } = require(constants_path);
+
+            let bptToken: IERC20
+            bptToken = IERC20__factory.connect(BPT_TOKEN_ADDRESS[chainId], provider);
+
+            await getERC20(admin, BPT_TOKEN_HOLDER[chainId], bptToken, delegator.address, lock_amount);
+
+            await bptToken.connect(delegator).approve(veToken.address, ethers.constants.MaxUint256);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+
+            await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount);
         }
 
-        await CRV.connect(delegator).transfer(receiver.address, crv_amount.sub(lock_amount));
-
     })
+
+    const resetVeLock = async (force: boolean = false) => {
+        const current_ts = BigNumber.from((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
+        const lock_time = (current_ts.add(VE_LOCKING_TIME)).div(WEEK).mul(WEEK)
+        const current_unlock_time = await veToken.locked__end(delegator.address)
+
+        if (current_unlock_time.lt(lock_time)) {
+            const new_current_ts = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp
+            if (current_unlock_time.lte(new_current_ts)) {
+                await veToken.connect(delegator).withdraw()
+                await veToken.connect(delegator).create_lock(lock_amount, (BigNumber.from(new_current_ts).add(VE_LOCKING_TIME)).div(WEEK).mul(WEEK));
+            }
+            else if(force){
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
+        }
+    }
 
 
     beforeEach(async () => {
 
         warden = (await wardenFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            feeToken.address,
+            veToken.address,
             delegationBoost.address,
             500, //5%
             1000, //10%
@@ -122,6 +168,9 @@ describe('Warden rewards tests - part 2', () => {
         await delegationBoost.connect(delegator).setApprovalForAll(warden.address, true);
 
         await rewardToken.connect(admin).transfer(warden.address, total_reward_amount)
+
+        await resetVeLock();
+        
     });
 
 
@@ -136,8 +185,8 @@ describe('Warden rewards tests - part 2', () => {
         const warden_reserveAmount = await warden.reserveAmount();
         const warden_reserveManager = await warden.reserveManager();
 
-        expect(warden_feeToken).to.be.eq(CRV.address);
-        expect(warden_votingEscrow).to.be.eq(veCRV.address);
+        expect(warden_feeToken).to.be.eq(feeToken.address);
+        expect(warden_votingEscrow).to.be.eq(veToken.address);
         expect(warden_delegationBoost).to.be.eq(delegationBoost.address);
         expect(warden_feeReserveRatio).to.be.eq(500);
         expect(warden_minPercRequired).to.be.eq(1000);
@@ -207,7 +256,7 @@ describe('Warden rewards tests - part 2', () => {
 
 
     describe('purchase Boost', async () => {
-        
+
         const min_perc = 2000
         const max_perc = 10000
 
@@ -254,7 +303,7 @@ describe('Warden rewards tests - part 2', () => {
 
             boost_amount = end_period_boost_amount
 
-            for(let i = 0; i < duration_seconds.div(WEEK).toNumber(); i++){
+            for (let i = 0; i < duration_seconds.div(WEEK).toNumber(); i++) {
 
                 let period = start_period.add(WEEK * (1 + i))
 
@@ -265,13 +314,13 @@ describe('Warden rewards tests - part 2', () => {
                 end_period_boost_amount = boost_amount.sub(period_decrease)
 
                 period_boost_amount = end_period_boost_amount.add(boost_decrease.add(period_decrease).div(2))
-    
+
                 rewards = (
                     (await warden.periodRewardIndex(next_period)).sub(await warden.periodRewardIndex(period))
                 ).mul(period_boost_amount).div(UNIT)
-    
+
                 total_rewards = total_rewards.add(rewards)
-    
+
                 boost_amount = end_period_boost_amount
 
             }
@@ -290,7 +339,7 @@ describe('Warden rewards tests - part 2', () => {
 
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
             await advanceTime(WEEK)
 
@@ -312,12 +361,12 @@ describe('Warden rewards tests - part 2', () => {
 
             const tx_block = (await buy_tx).blockNumber
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address, { blockTag: tx_block })
+            const delegator_balance = await veToken.balanceOf(delegator.address, { blockTag: tx_block })
             const boost_amount = delegator_balance.mul(buy_percent).div(10000)
 
             const expected_start_timestamp = BigNumber.from((await ethers.provider.getBlock(tx_block || 0)).timestamp)
             let expected_end_timestamp = current_period.add(WEEK * duration)
-            if(expected_end_timestamp.sub(expected_start_timestamp).lt(BigNumber.from(duration).mul(WEEK))){
+            if (expected_end_timestamp.sub(expected_start_timestamp).lt(BigNumber.from(duration).mul(WEEK))) {
                 expected_end_timestamp = expected_end_timestamp.add(WEEK)
             }
 
@@ -336,7 +385,7 @@ describe('Warden rewards tests - part 2', () => {
 
             const user_purchased_boosts = await warden.getUserPurchasedBoosts(receiver.address)
 
-            expect(user_purchased_boosts[user_purchased_boosts.length-1]).to.be.eq(token_id)
+            expect(user_purchased_boosts[user_purchased_boosts.length - 1]).to.be.eq(token_id)
 
             // Cancel Boost by receiver (so delegator is available for later tests)
             await delegationBoost.connect(receiver).cancel_boost(token_id)
@@ -356,12 +405,12 @@ describe('Warden rewards tests - part 2', () => {
 
             const tx_block = (await buy_tx).blockNumber
 
-            const delegator_balance = await veCRV.balanceOf(delegator.address, { blockTag: tx_block })
+            const delegator_balance = await veToken.balanceOf(delegator.address, { blockTag: tx_block })
             const boost_amount = delegator_balance.mul(buy_percent).div(10000)
 
             const expected_start_timestamp = BigNumber.from((await ethers.provider.getBlock(tx_block || 0)).timestamp)
             let expected_end_timestamp = current_period.add(WEEK * duration)
-            if(expected_end_timestamp.sub(expected_start_timestamp).lt(BigNumber.from(duration).mul(WEEK))){
+            if (expected_end_timestamp.sub(expected_start_timestamp).lt(BigNumber.from(duration).mul(WEEK))) {
                 expected_end_timestamp = expected_end_timestamp.add(WEEK)
             }
 
@@ -451,9 +500,9 @@ describe('Warden rewards tests - part 2', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
-            await CRV.connect(receiver).transfer(externalUser.address, fee_amount)
+            await feeToken.connect(receiver).transfer(externalUser.address, fee_amount)
 
-            await CRV.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
 
             await warden.connect(externalUser).buyDelegationBoost(delegator.address, externalUser.address, buy_percent2, duration2, fee_amount)
             const token_id2 = await delegationBoost.get_token_id(
@@ -496,7 +545,7 @@ describe('Warden rewards tests - part 2', () => {
             const boost1_end_target_period_amount = boost1_start_target_period_amount.sub(boost1_amount_decrease.mul(WEEK))
 
             const boost1_target_period_amount = boost1_end_target_period_amount.add(boost1_amount_decrease.add(boost1_amount_decrease.mul(WEEK)).div(2))
-    
+
             const boost1_target_period_reward = (
                 (await warden.periodRewardIndex(target_period.add(WEEK))).sub(await warden.periodRewardIndex(target_period))
             ).mul(boost1_target_period_amount).div(UNIT)
@@ -508,7 +557,7 @@ describe('Warden rewards tests - part 2', () => {
             const boost2_end_target_period_amount = boost2_start_target_period_amount.sub(boost2_amount_decrease.mul(WEEK))
 
             const boost2_target_period_amount = boost2_end_target_period_amount.add(boost2_amount_decrease.add(boost2_amount_decrease.mul(WEEK)).div(2))
-    
+
             const boost2_target_period_reward = (
                 (await warden.periodRewardIndex(target_period.add(WEEK))).sub(await warden.periodRewardIndex(target_period))
             ).mul(boost2_target_period_amount).div(UNIT)
@@ -530,9 +579,9 @@ describe('Warden rewards tests - part 2', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
-            await CRV.connect(receiver).transfer(externalUser.address, fee_amount)
+            await feeToken.connect(receiver).transfer(externalUser.address, fee_amount)
 
-            await CRV.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
 
             await warden.connect(externalUser).buyDelegationBoost(delegator.address, externalUser.address, buy_percent2, duration2, fee_amount)
             const token_id2 = await delegationBoost.get_token_id(
@@ -599,9 +648,9 @@ describe('Warden rewards tests - part 2', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
-            await CRV.connect(receiver).transfer(externalUser.address, fee_amount)
+            await feeToken.connect(receiver).transfer(externalUser.address, fee_amount)
 
-            await CRV.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
 
             await warden.connect(externalUser).buyDelegationBoost(delegator.address, externalUser.address, buy_percent2, duration2, fee_amount)
             const token_id2 = await delegationBoost.get_token_id(
@@ -631,7 +680,7 @@ describe('Warden rewards tests - part 2', () => {
 
 
     describe('claim rewards', async () => {
-        
+
         const min_perc = 2000
         const max_perc = 10000
 
@@ -655,10 +704,11 @@ describe('Warden rewards tests - part 2', () => {
                 minDropPerVote,
                 targetPurchaseAmount
             )
+            await resetVeLock(true)
 
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-            await CRV.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
             await advanceTime(WEEK)
 
@@ -735,9 +785,9 @@ describe('Warden rewards tests - part 2', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
-            await CRV.connect(receiver).transfer(externalUser.address, fee_amount)
+            await feeToken.connect(receiver).transfer(externalUser.address, fee_amount)
 
-            await CRV.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
 
             await warden.connect(externalUser).buyDelegationBoost(delegator.address, externalUser.address, buy_percent2, duration2, fee_amount)
             const token_id2 = await delegationBoost.get_token_id(
@@ -760,9 +810,9 @@ describe('Warden rewards tests - part 2', () => {
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
-            await CRV.connect(receiver).transfer(externalUser.address, fee_amount)
+            await feeToken.connect(receiver).transfer(externalUser.address, fee_amount)
 
-            await CRV.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
+            await feeToken.connect(externalUser).approve(warden.address, ethers.constants.MaxUint256)
 
             await warden.connect(externalUser).buyDelegationBoost(delegator.address, externalUser.address, buy_percent2, duration2, fee_amount)
             const token_id2 = await delegationBoost.get_token_id(
@@ -858,14 +908,14 @@ describe('Warden rewards tests - part 2', () => {
         describe('setBaseWeeklyDropPerVote', async () => {
 
             beforeEach(async () => {
-    
+
                 await warden.connect(admin).startRewardDistribution(
                     rewardToken.address,
                     baseDropPerVote,
                     minDropPerVote,
                     targetPurchaseAmount
                 )
-    
+
             });
 
             it(' should update the parameter correctly', async () => {
@@ -901,14 +951,14 @@ describe('Warden rewards tests - part 2', () => {
         describe('setMinWeeklyDropPerVote', async () => {
 
             beforeEach(async () => {
-    
+
                 await warden.connect(admin).startRewardDistribution(
                     rewardToken.address,
                     baseDropPerVote,
                     minDropPerVote,
                     targetPurchaseAmount
                 )
-    
+
             });
 
             it(' should update the parameter correctly', async () => {
@@ -944,14 +994,14 @@ describe('Warden rewards tests - part 2', () => {
         describe('setTargetPurchaseAmount', async () => {
 
             beforeEach(async () => {
-    
+
                 await warden.connect(admin).startRewardDistribution(
                     rewardToken.address,
                     baseDropPerVote,
                     minDropPerVote,
                     targetPurchaseAmount
                 )
-    
+
             });
 
             it(' should update the parameter correctly', async () => {
