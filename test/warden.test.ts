@@ -1859,7 +1859,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
                 await expect(
                     warden.connect(admin).withdrawERC20(feeToken.address, fee_token_amount)
-                ).to.be.revertedWith('Warden: cannot withdraw fee Token')
+                ).to.be.reverted
 
             });
 

@@ -524,7 +524,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             ((block.timestamp + durationSeconds + WEEK) / WEEK) * WEEK :
             expiryTime;
         require(
-            expiryTime <= votingEscrow.locked__end(delegator),
+            expiryTime <= votingEscrow.locked(delegator).end,
             "Warden: Lock expires before Boost"
         );
 
@@ -648,7 +648,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
             vars.expiryTime;
         require(
-            vars.expiryTime <= votingEscrow.locked__end(delegator),
+            vars.expiryTime <= votingEscrow.locked(delegator).end,
             "Warden: Lock expires before Boost"
         );
 
@@ -1241,7 +1241,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     * @param newManager Address to add
     */
     function approveManager(address newManager) external onlyOwner {
-        require(newManager != address(0), "Warden: Zero Address");
+        require(newManager != address(0));
         approvedManagers[newManager] = true;
     }
    
@@ -1251,7 +1251,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     * @param manager Address to remove
     */
     function removeManager(address manager) external onlyOwner {
-        require(manager != address(0), "Warden: Zero Address");
+        require(manager != address(0));
         approvedManagers[manager] = false;
     }
 
@@ -1297,7 +1297,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param amount Amount to transfer (in wei)
      */
     function withdrawERC20(address token, uint256 amount) external onlyOwner returns(bool) {
-        require(_claimBlocked || token != address(feeToken), "Warden: cannot withdraw fee Token"); //We want to be able to recover the fees if there is an issue
+        require(_claimBlocked || token != address(feeToken)); //We want to be able to recover the fees if there is an issue
         IERC20(token).safeTransfer(owner(), amount);
 
         return true;

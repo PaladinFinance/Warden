@@ -92,7 +92,7 @@ contract WardenLens {
         vars.minExpiryTime = (vars.minExpiryTime < vars.currentTime + vars.minDuration) ?
             ((vars.currentTime + vars.minDuration + WEEK) / WEEK) * WEEK :
             vars.minExpiryTime;
-        if(vars.minExpiryTime >= votingEscrow.locked__end(delegator)) return false;
+        if(vars.minExpiryTime >= votingEscrow.locked(delegator).end) return false;
 
         // Delegator current balance
         vars.balance = votingEscrow.balanceOf(delegator);
