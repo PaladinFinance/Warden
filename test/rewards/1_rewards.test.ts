@@ -419,7 +419,7 @@ describe('Warden rewards tests', () => {
 
             await expect(
                 warden.connect(receiver).claimBoostReward(12)
-            ).to.be.revertedWith('Warden: reward not started')
+            ).to.be.revertedWith('RewardsNotStarted')
 
         });
 
@@ -490,7 +490,7 @@ describe('Warden rewards tests', () => {
                     minDropPerVote,
                     targetPurchaseAmount
                 )
-            ).to.be.revertedWith('Warden: already started')
+            ).to.be.revertedWith('RewardsAlreadyStarted')
 
         });
 

@@ -197,23 +197,23 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).register(0, max_duration, min_perc, max_perc, false)
-            ).to.be.revertedWith('Warden: Price cannot be 0')
+            ).to.be.revertedWith('NullPrice')
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, max_duration, min_perc, low_max_perc, false)
-            ).to.be.revertedWith('Warden: minPerc is over maxPerc')
+            ).to.be.revertedWith('MinPercOverMaxPerc')
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, 0, min_perc, max_perc, false)
-            ).to.be.revertedWith('Warden: MaxDuration cannot be 0')
+            ).to.be.revertedWith('NullMaxDuration')
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, max_duration, min_perc, incorrect_max_perc, false)
-            ).to.be.revertedWith('Warden: maxPerc too high')
+            ).to.be.revertedWith('MaxPercTooHigh')
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, max_duration, incorrect_min_perc, max_perc, false)
-            ).to.be.revertedWith('Warden: minPerc too low')
+            ).to.be.revertedWith('MinPercTooLow')
 
         });
 
@@ -223,7 +223,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false)
-            ).to.be.revertedWith('Warden: Not operator for caller')
+            ).to.be.revertedWith('WardenNotOperator')
 
         });
 
@@ -233,7 +233,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false)
-            ).to.be.revertedWith('Warden: Already registered')
+            ).to.be.revertedWith('AlreadyRegistered')
 
         });
 
@@ -309,23 +309,23 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).updateOffer(0, max_duration, new_min_perc, new_max_perc, false)
-            ).to.be.revertedWith('Warden: Price cannot be 0')
+            ).to.be.revertedWith('NullPrice')
 
             await expect(
                 warden.connect(delegator).updateOffer(price_per_vote, 0, new_min_perc, new_max_perc, false)
-            ).to.be.revertedWith('Warden: MaxDuration cannot be 0')
+            ).to.be.revertedWith('NullMaxDuration')
 
             await expect(
                 warden.connect(delegator).updateOffer(price_per_vote, max_duration, new_min_perc, low_max_perc, false)
-            ).to.be.revertedWith('Warden: minPerc is over maxPerc')
+            ).to.be.revertedWith('MinPercOverMaxPerc')
 
             await expect(
                 warden.connect(delegator).updateOffer(price_per_vote, max_duration, new_min_perc, incorrect_max_perc, false)
-            ).to.be.revertedWith('Warden: maxPerc too high')
+            ).to.be.revertedWith('MaxPercTooHigh')
 
             await expect(
                 warden.connect(delegator).updateOffer(price_per_vote, max_duration, incorrect_min_perc, new_max_perc, false)
-            ).to.be.revertedWith('Warden: minPerc too low')
+            ).to.be.revertedWith('MinPercTooLow')
 
         });
 
@@ -333,7 +333,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(externalUser).updateOffer(new_price_per_vote, max_duration, new_min_perc, new_max_perc, false)
-            ).to.be.revertedWith('Warden: Not registered')
+            ).to.be.revertedWith('NotRegistered')
 
         });
 
@@ -397,7 +397,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).updateOfferPrice(0, false)
-            ).to.be.revertedWith('Warden: Price cannot be 0')
+            ).to.be.revertedWith('NullPrice')
 
         });
 
@@ -405,7 +405,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(externalUser).updateOfferPrice(new_price_per_vote, false)
-            ).to.be.revertedWith('Warden: Not registered')
+            ).to.be.revertedWith('NotRegistered')
 
         });
 
@@ -508,7 +508,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(externalUser).quit()
-            ).to.be.revertedWith('Warden: Not registered')
+            ).to.be.revertedWith('NotRegistered')
 
         });
 
@@ -572,27 +572,27 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).estimateFees(ethers.constants.AddressZero, wanted_perc, wanted_duration)
-            ).to.be.revertedWith('Warden: Zero address')
+            ).to.be.revertedWith('ZeroAddress')
 
             await expect(
                 warden.connect(receiver).estimateFees(externalUser.address, wanted_perc, wanted_duration)
-            ).to.be.revertedWith('Warden: Not registered')
+            ).to.be.revertedWith('NotRegistered')
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, wanted_perc, over_max_duration)
-            ).to.be.revertedWith('Warden: duration over Offer max')
+            ).to.be.revertedWith('DurationOverOfferMaxDuration')
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, under_required_min_perc, wanted_duration)
-            ).to.be.revertedWith('Warden: Percent under min required')
+            ).to.be.revertedWith('PercentUnderMinRequired')
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, overflow_max_perc, wanted_duration)
-            ).to.be.revertedWith('Warden: Percent over 100')
+            ).to.be.revertedWith('PercentOverMax')
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, wanted_perc, incorrect_duration)
-            ).to.be.revertedWith('Warden: Duration too short')
+            ).to.be.revertedWith('DurationTooShort')
 
         });
 
@@ -602,11 +602,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, incorrect_min_perc, wanted_duration)
-            ).to.be.revertedWith('Warden: Percent out of Offer bounds')
+            ).to.be.revertedWith('PercentOutOfferBonds')
 
             await expect(
                 warden.connect(receiver).estimateFees(delegator.address, incorrect_max_perc, wanted_duration)
-            ).to.be.revertedWith('Warden: Percent out of Offer bounds')
+            ).to.be.revertedWith('PercentOutOfferBonds')
 
         });
 
@@ -766,11 +766,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(ethers.constants.AddressZero, receiver.address, buy_percent, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Zero address')
+            ).to.be.revertedWith('ZeroAddress')
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, ethers.constants.AddressZero, buy_percent, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Zero address')
+            ).to.be.revertedWith('ZeroAddress')
 
         });
 
@@ -778,7 +778,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(externalUser.address, receiver.address, buy_percent, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Not registered')
+            ).to.be.revertedWith('NotRegistered')
 
         });
 
@@ -786,11 +786,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, under_min_required_perc, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Percent under min required')
+            ).to.be.revertedWith('PercentUnderMinRequired')
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, over_max_perc, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Percent over 100')
+            ).to.be.revertedWith('PercentOverMax')
 
         });
 
@@ -800,11 +800,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, wrong_min_perc, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Percent out of Offer bounds')
+            ).to.be.revertedWith('PercentOutOfferBonds')
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, wrong_max_perc, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Percent out of Offer bounds')
+            ).to.be.revertedWith('PercentOutOfferBonds')
 
         });
 
@@ -812,7 +812,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, over_max_duration, fee_amount)
-            ).to.be.revertedWith('Warden: duration over Offer max')
+            ).to.be.revertedWith('DurationOverOfferMaxDuration')
 
         });
 
@@ -820,7 +820,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, wrong_duration, fee_amount)
-            ).to.be.revertedWith('Warden: Duration too short')
+            ).to.be.revertedWith('DurationTooShort')
 
         });
 
@@ -828,11 +828,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, 0)
-            ).to.be.revertedWith('Warden: No fees')
+            ).to.be.revertedWith('NullFees')
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount.div(2))
-            ).to.be.revertedWith('Warden: Fees do not cover Boost duration')
+            ).to.be.revertedWith('FeesTooLow')
 
         });
 
@@ -852,7 +852,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, buy_percent, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Cannot delegate')
+            ).to.be.revertedWith('CannotDelegate')
 
         });
 
@@ -879,7 +879,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(externalUser).buyDelegationBoost(delegator.address, receiver.address, boost_2_percent, duration, fee_amount)
-            ).to.be.revertedWith('Warden: Cannot delegate')
+            ).to.be.revertedWith('CannotDelegate')
 
             // Cancel Boost by receiver (so delegator is available for later tests)
             await delegationBoost.connect(receiver).cancel_boost(token_id_1)
@@ -1060,7 +1060,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(receiver).cancelDelegationBoost(token_id)
-            ).to.be.revertedWith('Cannot cancel the boost')
+            ).to.be.revertedWith('CannotCancelBoost')
 
             await delegationBoost.connect(receiver).setApprovalForAll(warden.address, true);
 
@@ -1093,7 +1093,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).cancelDelegationBoost(token_id)
-            ).to.be.revertedWith('Cannot cancel the boost')
+            ).to.be.revertedWith('CannotCancelBoost')
 
             const current_time = (await ethers.provider.getBlock(await ethers.provider.blockNumber)).timestamp
             const cancel_time = await delegationBoost.token_cancel_time(token_id)
@@ -1117,7 +1117,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).cancelDelegationBoost(token_id)
-            ).to.be.revertedWith('Cannot cancel the boost')
+            ).to.be.revertedWith('CannotCancelBoost')
 
             const current_time = (await ethers.provider.getBlock(await ethers.provider.blockNumber)).timestamp
             const cancel_time = await delegationBoost.token_cancel_time(token_id)
@@ -1154,7 +1154,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(externalUser).cancelDelegationBoost(token_id)
-            ).to.be.revertedWith('Cannot cancel the boost')
+            ).to.be.revertedWith('CannotCancelBoost')
 
             const current_time = (await ethers.provider.getBlock(await ethers.provider.blockNumber)).timestamp
             const expire_time = await delegationBoost.token_expiry(token_id)
@@ -1236,11 +1236,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(externalUser)["claim()"]()
-            ).to.be.revertedWith('Warden: Claim null amount')
+            ).to.be.revertedWith('NullClaimAmount')
 
             await expect(
                 warden.connect(externalUser)["claim(uint256)"](0)
-            ).to.be.revertedWith('Warden: Claim null amount')
+            ).to.be.revertedWith('NullClaimAmount')
 
         });
 
@@ -1250,7 +1250,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator)["claim(uint256)"](earned.mul(2))
-            ).to.be.revertedWith('Warden: Amount too high')
+            ).to.be.revertedWith('AmountTooHigh')
 
         });
 
@@ -1488,7 +1488,7 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(priceManager).setAdvisedPrice(0)
-            ).to.be.revertedWith('Warden: Null value')
+            ).to.be.revertedWith('NullValue')
 
         });
 
@@ -1496,11 +1496,11 @@ describe('Warden contract tests', () => {
 
             await expect(
                 warden.connect(delegator).setAdvisedPrice(new_base_price)
-            ).to.be.revertedWith('Warden: Caller not allowed')
+            ).to.be.revertedWith('CallerNotManager')
     
             await expect(
                 warden.connect(externalUser).setAdvisedPrice(new_base_price)
-            ).to.be.revertedWith('Warden: Caller not allowed')
+            ).to.be.revertedWith('CallerNotManager')
 
         });
 
@@ -1561,7 +1561,7 @@ describe('Warden contract tests', () => {
     
                 await expect(
                     warden.connect(priceManager).setAdvisedPrice(50)
-                ).to.be.revertedWith('Warden: Caller not allowed')
+                ).to.be.revertedWith('CallerNotManager')
     
                 await warden.connect(admin).approveManager(priceManager.address)
     
@@ -1605,7 +1605,7 @@ describe('Warden contract tests', () => {
     
                 await expect(
                     warden.connect(priceManager).setAdvisedPrice(50)
-                ).to.be.revertedWith('Warden: Caller not allowed')
+                ).to.be.revertedWith('CallerNotManager')
     
             });
     
@@ -1664,7 +1664,7 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(delegator)["claim()"]()
-                ).to.be.revertedWith("Warden: Claim blocked")
+                ).to.be.revertedWith('ClaimBlocked')
 
             });
 
@@ -1674,7 +1674,7 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(delegator)["claim()"]()
-                ).to.be.revertedWith("Warden: Claim blocked")
+                ).to.be.revertedWith('ClaimBlocked')
 
                 await warden.connect(admin).unblockClaim()
 
@@ -1853,7 +1853,7 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(admin).withdrawERC20(CRV.address, crv_amount)
-                ).to.be.revertedWith('Warden: cannot withdraw fee Token')
+                ).to.be.revertedWith('CannotWithdrawFeeToken')
 
             });
 
@@ -1927,14 +1927,14 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(externalUser).depositToReserve(reserveManager.address, deposit_amount)
-                ).to.be.revertedWith('Warden: Not allowed')
+                ).to.be.revertedWith('CallerNotAllowed')
 
                 //set Reserve Manager
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 await expect(
                     warden.connect(externalUser).depositToReserve(reserveManager.address, deposit_amount)
-                ).to.be.revertedWith('Warden: Not allowed')
+                ).to.be.revertedWith('CallerNotAllowed')
 
             });
 
@@ -1998,7 +1998,7 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(admin).withdrawFromReserve(reserve_amount.mul(2))
-                ).to.be.revertedWith('Warden: Reserve too low')
+                ).to.be.revertedWith('ReserveTooLow')
 
             });
 
@@ -2006,14 +2006,14 @@ describe('Warden contract tests', () => {
 
                 await expect(
                     warden.connect(externalUser).withdrawFromReserve(ethers.utils.parseEther('10'))
-                ).to.be.revertedWith('Warden: Not allowed')
+                ).to.be.revertedWith('CallerNotAllowed')
 
                 //set Reserve Manager
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 await expect(
                     warden.connect(externalUser).withdrawFromReserve(ethers.utils.parseEther('10'))
-                ).to.be.revertedWith('Warden: Not allowed')
+                ).to.be.revertedWith('CallerNotAllowed')
 
             });
 
