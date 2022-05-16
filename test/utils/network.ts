@@ -10,4 +10,5 @@ export const TEST_URI = {
     [CHAINID.FANTOM]: "https://rpc.ftm.tools/",
     [CHAINID.OPTIMISM]: "https://opt-mainnet.g.alchemy.com/v2/" + (process.env.OPTIMISM_ALCHEMY_API_KEY || ''),
     [CHAINID.ARBITRUM]: "https://arb-mainnet.g.alchemy.com/v2/" + (process.env.ARBITRUM_ALCHEMY_API_KEY || ''),
+    [CHAINID.XCHAIN]: "https://rpc.xdaichain.com/",
 };
