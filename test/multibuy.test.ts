@@ -7,9 +7,11 @@ import { WardenMultiBuy } from "../typechain/WardenMultiBuy";
 import { IERC20 } from "../typechain/IERC20";
 import { IERC20__factory } from "../typechain/factories/IERC20__factory";
 import { IVotingEscrow } from "../typechain/IVotingEscrow";
+import { IVotingEscrowStateOracle } from "../typechain/IVotingEscrowStateOracle";
 import { IVotingEscrow__factory } from "../typechain/factories/IVotingEscrow__factory";
 import { IVotingEscrowDelegation } from "../typechain/IVotingEscrowDelegation";
 import { IVotingEscrowDelegation__factory } from "../typechain/factories/IVotingEscrowDelegation__factory";
+import { IVotingEscrowStateOracle__factory } from "../typechain/factories/IVotingEscrowStateOracle__factory";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
@@ -19,6 +21,9 @@ import {
     advanceTime,
     getERC20,
     resetFork,
+    getVeHolders,
+    setBlockhash,
+    setHolderSidechainBalance,
 } from "./utils/utils";
 
 require("dotenv").config();
@@ -39,7 +44,11 @@ let wardenFactory: ContractFactory
 let multiBuyFactory: ContractFactory
 
 let network_name = "Ethereum"
-if (CHAINID === 137) network_name = "Polygon"
+if (chainId === 137) network_name = "Polygon"
+if (chainId === 43114) network_name = "Avalanche"
+if (chainId === 250) network_name = "Fantom"
+if (chainId === 10) network_name = "Optimism"
+if (chainId === 42161) network_name = "Arbitrum"
 
 
 describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => {
@@ -65,16 +74,16 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
     let veToken: IVotingEscrow
     let delegationBoost: IVotingEscrowDelegation
 
-    const price_per_vote1 = BigNumber.from(8.25 * 1e10) // ~ 50 for a 1000 veToken boost for a week
-    const price_per_vote2 = BigNumber.from(41.25 * 1e10) // ~ 250 for a 1000 veToken boost for a week
-    const price_per_vote3 = BigNumber.from(16.5 * 1e10)
-    const price_per_vote4 = BigNumber.from(16.5 * 1e8)
-    const price_per_vote5 = BigNumber.from(12.375 * 1e10)
-    const price_per_vote6 = BigNumber.from(8.25 * 1e11)
-    const price_per_vote7 = BigNumber.from(41.25 * 1e10)
-    const price_per_vote8 = BigNumber.from(33 * 1e10)
+    const price_per_vote1 = BigNumber.from(8.25 * 1e7) // ~ 50 for a 1000 veToken boost for a week
+    const price_per_vote2 = BigNumber.from(41.25 * 1e7) // ~ 250 for a 1000 veToken boost for a week
+    const price_per_vote3 = BigNumber.from(16.5 * 1e7)
+    const price_per_vote4 = BigNumber.from(16.5 * 1e5)
+    const price_per_vote5 = BigNumber.from(12.375 * 1e7)
+    const price_per_vote6 = BigNumber.from(8.25 * 1e8)
+    const price_per_vote7 = BigNumber.from(41.25 * 1e7)
+    const price_per_vote8 = BigNumber.from(33 * 1e7)
 
-    const base_advised_price = BigNumber.from(7.25 * 1e10)
+    const base_advised_price = BigNumber.from(1.25 * 1e7)
 
     before(async () => {
         await resetFork(chainId);
@@ -108,39 +117,78 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
 
         await getERC20(admin, BIG_HOLDER[chainId], feeToken, admin.address, fee_token_amount);
 
-        //split between all delegators
-        await feeToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
-        await feeToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
-        await feeToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
-        await feeToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
-        await feeToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
-        await feeToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
-        await feeToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
-        await feeToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
+        if (chainId === 1) {
+            //split between all delegators
+            await feeToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await feeToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await feeToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await feeToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await feeToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await feeToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await feeToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await feeToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
 
-        await feeToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
-        await feeToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
-        await feeToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
-        await feeToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
-        await feeToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
-        await feeToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
-        await feeToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
-        await feeToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
+            await feeToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await feeToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await feeToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await feeToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await feeToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await feeToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await feeToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await feeToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
 
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
-        const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
 
-        await veToken.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
-        await veToken.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
-        await veToken.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
-        await veToken.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
-        await veToken.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
-        await veToken.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
-        await veToken.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
-        await veToken.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
+            await veToken.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
+            await veToken.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
+            await veToken.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
+            await veToken.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
+            await veToken.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
+            await veToken.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
+            await veToken.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
+            await veToken.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
 
-        await feeToken.connect(admin).transfer(receiver.address, fee_token_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
-        await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+            await feeToken.connect(admin).transfer(receiver.address, fee_token_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
+            await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+        }
+        else {
+            let stateOracle: IVotingEscrowStateOracle
+            stateOracle = IVotingEscrowStateOracle__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
+
+            [
+                delegator1,
+                delegator2,
+                delegator3,
+                delegator4,
+                delegator5,
+                delegator6,
+                delegator7,
+                delegator8
+            ] = await getVeHolders(admin, 8)
+
+            await setBlockhash(admin, stateOracle)
+
+            const delegators = [
+                delegator1,
+                delegator2,
+                delegator3,
+                delegator4,
+                delegator5,
+                delegator6,
+                delegator7,
+                delegator8
+            ]
+
+            for(let i = 0; i < 8; i++){
+                await setHolderSidechainBalance(admin, stateOracle, delegators[i])
+            }
+
+            await getERC20(admin, BIG_HOLDER[chainId], feeToken, admin.address, ethers.utils.parseEther('300000'));
+
+            await feeToken.connect(admin).transfer(receiver.address, ethers.utils.parseEther('100000'));
+            await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('100000'));
+        }
 
     });
 
@@ -233,8 +281,8 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
         const one_week = BigNumber.from(7 * 86400);
         const duration = 2
 
-        const amount = ethers.utils.parseEther('700')
-        const bigger_amount = ethers.utils.parseEther('2000')
+        const amount = ethers.utils.parseEther('700000')
+        const bigger_amount = ethers.utils.parseEther('2000000')
 
         const max_price = price_per_vote2
 
@@ -242,10 +290,10 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
         const incorrect_fee_amount = amount.mul(max_price.div(5)).mul(one_week.mul(duration)).div(unit)
         const bigger_fee_amount = bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
-        const accepted_slippage = 10 // 0.1 %
+        const accepted_slippage = 100
 
         const minRequiredAmount = BigNumber.from(0)
-        const bigger_minRequiredAmount = ethers.utils.parseEther('200')
+        const bigger_minRequiredAmount = ethers.utils.parseEther('200000')
 
         it(' should buy Boosts to cover requested amount + Event', async () => {
             // Check that it's taking them in the right order
@@ -531,7 +579,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
 
         it(' should skip Offers with price over the maxPrice given', async () => {
 
-            const other_amount = ethers.utils.parseEther('600')
+            const other_amount = ethers.utils.parseEther('600000')
 
             const lower_max_price = price_per_vote3
             const low_fee_amount = other_amount.mul(lower_max_price).mul(one_week.mul(duration)).div(unit)
@@ -738,7 +786,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
 
         it(' should skip Offers where lock is already over', async () => {
 
-            const slightly_bigger_amount = ethers.utils.parseEther('1150')
+            const slightly_bigger_amount = ethers.utils.parseEther('1150000')
             const slightly_bigger_fee_amount = slightly_bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
             const buy_tx = await multiBuy.connect(receiver).simpleMultiBuy(
@@ -1025,7 +1073,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
             const tx_timestamp = (await ethers.provider.getBlock((await buy_2_tx).blockNumber || 0)).timestamp
             await advanceTime(boost_cancel_time.sub(tx_timestamp).toNumber())
 
-            const other_amount = ethers.utils.parseEther('500')
+            const other_amount = ethers.utils.parseEther('500000')
 
             const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
@@ -1105,8 +1153,8 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
         const one_week = BigNumber.from(7 * 86400);
         const duration = 2
 
-        const amount = ethers.utils.parseEther('700')
-        const bigger_amount = ethers.utils.parseEther('2000')
+        const amount = ethers.utils.parseEther('700000')
+        const bigger_amount = ethers.utils.parseEther('2000000')
 
         const max_price = price_per_vote2
 
@@ -1114,10 +1162,10 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
         const incorrect_fee_amount = amount.mul(max_price.div(5)).mul(one_week.mul(duration)).div(unit)
         const bigger_fee_amount = bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
-        const accepted_slippage = 100 // 1 %
+        const accepted_slippage = 100
 
         const minRequiredAmount = BigNumber.from(0)
-        const bigger_minRequiredAmount = ethers.utils.parseEther('200')
+        const bigger_minRequiredAmount = ethers.utils.parseEther('200000')
 
         const preSorted_Offers_list = [7, 8, 1, 4, 6, 2, 5, 3]
 
@@ -1544,7 +1592,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
 
             it(' should skip Offers with price over the maxPrice given', async () => {
 
-                const other_amount = ethers.utils.parseEther('600')
+                const other_amount = ethers.utils.parseEther('600000')
 
                 const lower_max_price = price_per_vote3
                 const low_fee_amount = other_amount.mul(lower_max_price).mul(one_week.mul(duration)).div(unit)
@@ -1696,7 +1744,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
                 boosts_expected_percent_buy[1] = (await warden.offers(1)).maxPerc - boost_buy_percent
                 boosts_expected_percent_buy[2] = (await warden.offers(2)).maxPerc - boost_buy_percent
 
-                const other_amount = ethers.utils.parseEther('600')
+                const other_amount = ethers.utils.parseEther('600000')
 
                 const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
@@ -1771,7 +1819,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
 
                 const other_preSorted_Offers = [7, 5, 8, 1, 4, 6]
 
-                const slightly_bigger_amount = ethers.utils.parseEther('800')
+                const slightly_bigger_amount = ethers.utils.parseEther('800000')
                 const slightly_bigger_fee_amount = slightly_bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1855,7 +1903,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
 
                 await delegationBoost.connect(delegator8).setApprovalForAll(warden.address, false);
 
-                const slightly_smaller_amount = ethers.utils.parseEther('800')
+                const slightly_smaller_amount = ethers.utils.parseEther('800000')
                 const slightly_smaller_fee_amount = slightly_smaller_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1995,7 +2043,7 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
                 const tx_timestamp = (await ethers.provider.getBlock((await buy_2_tx).blockNumber || 0)).timestamp
                 await advanceTime(boost_cancel_time.sub(tx_timestamp).toNumber())
 
-                const other_amount = ethers.utils.parseEther('750')
+                const other_amount = ethers.utils.parseEther('750000')
 
                 const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
@@ -2082,13 +2130,13 @@ describe('Warden MultiBuy contract tests - ' + network_name + ' version', () => 
         const one_week = BigNumber.from(7 * 86400);
         const duration = 2
 
-        const amount = ethers.utils.parseEther('750')
+        const amount = ethers.utils.parseEther('750000')
 
         const max_price = price_per_vote2
 
         const fee_amount = amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
-        const accepted_slippage = 10 // 0.1 %
+        const accepted_slippage = 100
 
         const minRequiredAmount = BigNumber.from(0)
 

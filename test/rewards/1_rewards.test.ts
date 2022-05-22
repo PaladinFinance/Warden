@@ -6,9 +6,11 @@ import { Warden } from "../../typechain/Warden";
 import { IERC20 } from "../../typechain/IERC20";
 import { IERC20__factory } from "../../typechain/factories/IERC20__factory";
 import { IVotingEscrow } from "../../typechain/IVotingEscrow";
+import { IVotingEscrowStateOracle } from "../../typechain/IVotingEscrowStateOracle";
 import { IVotingEscrow__factory } from "../../typechain/factories/IVotingEscrow__factory";
 import { IVotingEscrowDelegation } from "../../typechain/IVotingEscrowDelegation";
 import { IVotingEscrowDelegation__factory } from "../../typechain/factories/IVotingEscrowDelegation__factory";
+import { IVotingEscrowStateOracle__factory } from "../../typechain/factories/IVotingEscrowStateOracle__factory";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 import { ContractFactory } from "@ethersproject/contracts";
 import { BigNumber } from "@ethersproject/bignumber";
@@ -17,6 +19,9 @@ import {
     advanceTime,
     getERC20,
     resetFork,
+    getVeHolders,
+    setBlockhash,
+    setHolderSidechainBalance,
 } from "../utils/utils";
 
 require("dotenv").config();
@@ -41,7 +46,11 @@ const minDropPerVote = ethers.utils.parseEther('0.001')
 const targetPurchaseAmount = ethers.utils.parseEther('50000')
 
 let network_name = "Ethereum"
-if (CHAINID === 137) network_name = "Polygon"
+if (chainId === 137) network_name = "Polygon"
+if (chainId === 43114) network_name = "Avalanche"
+if (chainId === 250) network_name = "Fantom"
+if (chainId === 10) network_name = "Optimism"
+if (chainId === 42161) network_name = "Arbitrum"
 
 
 describe('Warden rewards tests - ' + network_name + ' version', () => {
@@ -60,9 +69,9 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
     let rewardToken: IERC20
 
-    const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
+    const price_per_vote = BigNumber.from(4.25 * 1e9)
 
-    const base_advised_price = BigNumber.from(1.25 * 1e10)
+    const base_advised_price = BigNumber.from(1.25 * 1e9)
 
     const total_reward_amount = ethers.utils.parseEther('20000');
 
@@ -72,6 +81,10 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
         await resetFork(chainId);
 
         [admin, reserveManager, priceManager, delegator, receiver, externalUser] = await ethers.getSigners();
+
+        if(chainId !== 1){
+            [delegator] = await getVeHolders(admin, 1)
+        }
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
@@ -89,24 +102,38 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
         await getERC20(admin, REWARD_HOLDER[chainId], rewardToken, admin.address, ethers.utils.parseEther('2500000'));
 
-        await feeToken.connect(delegator).approve(veToken.address, 0);
-        await feeToken.connect(delegator).approve(veToken.address, ethers.constants.MaxUint256);
-        const locked_balance = (await veToken.locked(delegator.address)).amount
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
-        if (locked_balance.eq(0)) {
-            await veToken.connect(delegator).create_lock(lock_amount, lock_time);
-        } else if (locked_balance.lt(lock_amount)) {
-            await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
-            await veToken.connect(delegator).increase_unlock_time(lock_time);
-        } else {
-            await veToken.connect(delegator).increase_unlock_time(lock_time);
-        }
+        if (chainId === 1) {
+            await feeToken.connect(delegator).approve(veToken.address, 0);
+            await feeToken.connect(delegator).approve(veToken.address, ethers.constants.MaxUint256);
+            const locked_balance = (await veToken.locked(delegator.address)).amount
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            if (locked_balance.eq(0)) {
+                await veToken.connect(delegator).create_lock(lock_amount, lock_time);
+            } else if (locked_balance.lt(lock_amount)) {
+                await veToken.connect(delegator).increase_amount(lock_amount.sub(locked_balance));
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            } else {
+                await veToken.connect(delegator).increase_unlock_time(lock_time);
+            }
 
-        await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount.sub(lock_amount));
+            await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount.sub(lock_amount));
+        }
+        else {
+            let stateOracle: IVotingEscrowStateOracle
+            stateOracle = IVotingEscrowStateOracle__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
+
+            await setBlockhash(admin, stateOracle)
+
+            await setHolderSidechainBalance(admin, stateOracle, delegator)
+
+            await feeToken.connect(delegator).transfer(receiver.address, fee_token_amount);
+        }
 
     })
 
     const resetVeLock = async (force: boolean = false) => {
+        if (chainId !== 1) return
+
         const current_ts = BigNumber.from((await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp)
         const lock_time = (current_ts.add(VE_LOCKING_TIME)).div(WEEK).mul(WEEK)
         const current_unlock_time = await veToken.locked__end(delegator.address)
@@ -121,7 +148,6 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
                 await veToken.connect(delegator).increase_unlock_time(lock_time);
             }
         }
-
     }
 
 
@@ -1049,7 +1075,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
         let fee_amount: BigNumber;
 
-        const new_targetPurchaseAmount = ethers.utils.parseEther('15000')
+        const new_targetPurchaseAmount = chainId === 1 ? ethers.utils.parseEther('15000') : ethers.utils.parseEther('75000')
 
         beforeEach(async () => {
 
