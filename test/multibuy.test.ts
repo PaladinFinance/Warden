@@ -946,7 +946,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Zero address')
+            ).to.be.revertedWith('ZeroAddress')
 
             await expect(
                 multiBuy.connect(receiver).simpleMultiBuy(
@@ -959,7 +959,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Null value')
+            ).to.be.revertedWith('NullValue')
 
             await expect(
                 multiBuy.connect(receiver).simpleMultiBuy(
@@ -972,7 +972,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Null value')
+            ).to.be.revertedWith('NullValue')
 
             await expect(
                 multiBuy.connect(receiver).simpleMultiBuy(
@@ -985,7 +985,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     0,
                     false
                 )
-            ).to.be.revertedWith('Null value')
+            ).to.be.revertedWith('NullValue')
 
             await expect(
                 multiBuy.connect(receiver).simpleMultiBuy(
@@ -998,7 +998,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Null price')
+            ).to.be.revertedWith('NullPrice')
 
             await expect(
                 multiBuy.connect(receiver).simpleMultiBuy(
@@ -1011,7 +1011,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Duration too short')
+            ).to.be.revertedWith('DurationTooShort')
 
         });
 
@@ -1028,7 +1028,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Cannot match Order')
+            ).to.be.revertedWith('CannotMatchOrder')
 
         });
 
@@ -1045,7 +1045,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     accepted_slippage,
                     false
                 )
-            ).to.be.revertedWith('Not Enough Fees')
+            ).to.be.revertedWith('NotEnoughFees')
 
         });
 
@@ -1325,7 +1325,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     [42,7,8,1,4,6,2,5,3]
                 )
-            ).to.be.revertedWith('BoostOffer does not exist')
+            ).to.be.revertedWith('InvalidBoostOffer')
 
         });
 
@@ -1343,7 +1343,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     preSorted_Offers_list
                 )
-            ).to.be.revertedWith('Zero address')
+            ).to.be.revertedWith('ZeroAddress')
 
             await expect(
                 multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1357,7 +1357,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     preSorted_Offers_list
                 )
-            ).to.be.revertedWith('Null value')
+            ).to.be.revertedWith('NullValue')
 
             await expect(
                 multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1371,7 +1371,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     preSorted_Offers_list
                 )
-            ).to.be.revertedWith('Null value')
+            ).to.be.revertedWith('NullValue')
 
             await expect(
                 multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1385,7 +1385,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     preSorted_Offers_list
                 )
-            ).to.be.revertedWith('Null value')
+            ).to.be.revertedWith('NullValue')
 
             await expect(
                 multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1399,7 +1399,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     preSorted_Offers_list
                 )
-            ).to.be.revertedWith('Null price')
+            ).to.be.revertedWith('NullPrice')
 
             await expect(
                 multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1413,7 +1413,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     preSorted_Offers_list
                 )
-            ).to.be.revertedWith('Duration too short')
+            ).to.be.revertedWith('DurationTooShort')
 
             await expect(
                 multiBuy.connect(receiver).preSortedMultiBuy(
@@ -1427,7 +1427,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                     false,
                     []
                 )
-            ).to.be.revertedWith('Empty Array')
+            ).to.be.revertedWith('EmptyArray')
 
         });
 
@@ -1997,7 +1997,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                         false,
                         preSorted_Offers_list
                     )
-                ).to.be.revertedWith('Cannot match Order')
+                ).to.be.revertedWith('CannotMatchOrder')
     
             });
     
@@ -2015,7 +2015,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                         false,
                         preSorted_Offers_list
                     )
-                ).to.be.revertedWith('Not Enough Fees')
+                ).to.be.revertedWith('NotEnoughFees')
     
             });
     

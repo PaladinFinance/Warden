@@ -460,7 +460,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
 
             await expect(
                 warden.getBoostReward(token_id)
-            ).to.be.revertedWith('Warden: reward not updated')
+            ).to.be.revertedWith('RewardsNotUpdated')
 
             // Cancel Boost by receiver (so delegator is available for later tests)
             await delegationBoost.connect(receiver).cancel_boost(token_id)
@@ -759,7 +759,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
 
             await expect(
                 warden.connect(receiver).claimBoostReward(token_id)
-            ).to.be.revertedWith("Warden: already claimed");
+            ).to.be.revertedWith('AlreadyClaimed');
 
         });
 
@@ -767,7 +767,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
 
             await expect(
                 warden.connect(externalUser).claimBoostReward(token_id)
-            ).to.be.revertedWith("Warden: not buyer");
+            ).to.be.revertedWith('NotBoostBuyer');
 
         });
 
@@ -775,7 +775,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
 
             await expect(
                 warden.connect(receiver).claimBoostReward(token_id.add(5))
-            ).to.be.revertedWith("Warden: no reward for boost");
+            ).to.be.revertedWith('BoostRewardsNull');
 
         });
 
@@ -797,7 +797,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
 
             await expect(
                 warden.connect(externalUser).claimBoostReward(token_id2)
-            ).to.be.revertedWith("Warden: cannot claim");
+            ).to.be.revertedWith('CannotClaim');
 
             // Cancel Boost by receiver (so delegator is available for later tests)
             await delegationBoost.connect(externalUser).cancel_boost(token_id2)
