@@ -70,11 +70,11 @@ describe('Warden rewards tests - part 2 - ' + network_name + ' version', () => {
 
     let rewardToken: IERC20
 
-    const price_per_vote = BigNumber.from(4.25 * 1e9)
+    const price_per_vote = BigNumber.from(4.25 * 1e8)
 
-    const base_advised_price = BigNumber.from(1.25 * 1e9)
+    const base_advised_price = BigNumber.from(1.25 * 1e8)
 
-    const total_reward_amount = ethers.utils.parseEther('200000');
+    const total_reward_amount = ethers.utils.parseEther('20000');
 
     const lock_amount = ethers.utils.parseEther('15000');
 
@@ -89,7 +89,7 @@ describe('Warden rewards tests - part 2 - ' + network_name + ' version', () => {
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const fee_token_amount = ethers.utils.parseEther('300000');
+        const fee_token_amount = ethers.utils.parseEther('35000');
 
         feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 
@@ -101,7 +101,7 @@ describe('Warden rewards tests - part 2 - ' + network_name + ' version', () => {
 
         await getERC20(admin, BIG_HOLDER[chainId], feeToken, delegator.address, fee_token_amount);
 
-        await getERC20(admin, REWARD_HOLDER[chainId], rewardToken, admin.address, ethers.utils.parseEther('25000000'));
+        await getERC20(admin, REWARD_HOLDER[chainId], rewardToken, admin.address, ethers.utils.parseEther('2500000'));
 
         if (chainId === 1) {
             await feeToken.connect(delegator).approve(veToken.address, 0);

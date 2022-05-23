@@ -42,7 +42,7 @@ const config: HardhatUserConfig = {
       forking: {
         url: TEST_URI[CHAINID],
         blockNumber: BLOCK_NUMBER[CHAINID]
-      }
+      },
     },
     mainnet: {
       url: process.env.MAINNET_URI,

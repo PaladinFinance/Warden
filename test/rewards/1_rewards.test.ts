@@ -69,9 +69,9 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
     let rewardToken: IERC20
 
-    const price_per_vote = BigNumber.from(4.25 * 1e9)
+    const price_per_vote = BigNumber.from(4.25 * 1e8)
 
-    const base_advised_price = BigNumber.from(1.25 * 1e9)
+    const base_advised_price = BigNumber.from(1.25 * 1e8)
 
     const total_reward_amount = ethers.utils.parseEther('20000');
 
@@ -88,7 +88,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const fee_token_amount = ethers.utils.parseEther('400000');
+        const fee_token_amount = ethers.utils.parseEther('40000');
 
         feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 

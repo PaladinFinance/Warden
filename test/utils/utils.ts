@@ -62,7 +62,7 @@ export async function resetFork(chainId: number) {
                 forking: {
                     jsonRpcUrl: TEST_URI[chainId],
                     blockNumber: blockNumber
-                }
+                },
             },
         ],
     });
@@ -80,11 +80,16 @@ export async function getVeHolders(
             method: "hardhat_impersonateAccount",
             params: [HOLDERS[i]],
         });
+
+        await hre.network.provider.request({
+            method: "hardhat_setBalance",
+            params: [HOLDERS[i], ethers.utils.parseEther("5500000000").toHexString()],
+        });
     
-        await admin.sendTransaction({
+        /*await admin.sendTransaction({
             to: HOLDERS[i],
             value: ethers.utils.parseEther("1000"),
-        });
+        });*/
     
         const holder = await ethers.getSigner(HOLDERS[i])
 
@@ -106,10 +111,15 @@ export async function setBlockhash(
         params: [stateOracle_owner],
     });
 
-    await admin.sendTransaction({
-        to: stateOracle_owner,
-        value: ethers.utils.parseEther("10"),
+    await hre.network.provider.request({
+        method: "hardhat_setBalance",
+        params: [stateOracle_owner, ethers.utils.parseEther("5500000000").toHexString()],
     });
+
+    /*await admin.sendTransaction({
+        to: stateOracle_owner,
+        value: ethers.utils.parseEther("1000"),
+    });*/
 
     const owner = await ethers.getSigner(stateOracle_owner)
 
@@ -156,10 +166,15 @@ export async function getERC20(
         params: [holder],
     });
 
-    await admin.sendTransaction({
-        to: holder,
-        value: ethers.utils.parseEther("10"),
+    await hre.network.provider.request({
+        method: "hardhat_setBalance",
+        params: [holder, ethers.utils.parseEther("5500000000").toHexString()],
     });
+
+    /*await admin.sendTransaction({
+        to: holder,
+        value: ethers.utils.parseEther("1000"),
+    });*/
 
     const signer = await ethers.getSigner(holder)
 

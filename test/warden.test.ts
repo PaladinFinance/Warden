@@ -59,9 +59,9 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
     let veToken: IVotingEscrow
     let delegationBoost: IVotingEscrowDelegation
 
-    const price_per_vote = BigNumber.from(4.25 * 1e9)
+    const price_per_vote = BigNumber.from(4.25 * 1e8)
 
-    const base_advised_price = BigNumber.from(1.25 * 1e9)
+    const base_advised_price = BigNumber.from(1.25 * 1e8)
 
     before(async () => {
         await resetFork(chainId);
@@ -74,7 +74,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
         wardenFactory = await ethers.getContractFactory("Warden");
 
-        const fee_token_amount = ethers.utils.parseEther('300000');
+        const fee_token_amount = ethers.utils.parseEther('35000');
         const lock_amount = ethers.utils.parseEther('1000');
 
         feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
@@ -511,7 +511,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
         it(' should claim remaining earnedFees', async () => {
 
-            const fee_amount = ethers.utils.parseEther('5000');
+            const fee_amount = ethers.utils.parseEther('500');
 
             await feeToken.connect(receiver).approve(warden.address, fee_amount)
             await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 5000, 1, fee_amount);
@@ -578,8 +578,8 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
             )
 
             //Since veToken has deteriorating balance, we look for an amount between 2 bounds
-            expect(estimated_amount).to.be.gte(ethers.utils.parseEther('2400'))
-            expect(estimated_amount).to.be.lte(ethers.utils.parseEther('2500'))
+            expect(estimated_amount).to.be.gte(ethers.utils.parseEther('240'))
+            expect(estimated_amount).to.be.lte(ethers.utils.parseEther('250'))
 
         });
 
@@ -594,8 +594,8 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
             )
 
             //Since veToken has deteriorating balance, we look for an amount between 2 bounds
-            expect(estimated_amount).to.be.gte(ethers.utils.parseEther('700'))
-            expect(estimated_amount).to.be.lte(ethers.utils.parseEther('730'))
+            expect(estimated_amount).to.be.gte(ethers.utils.parseEther('70'))
+            expect(estimated_amount).to.be.lte(ethers.utils.parseEther('73'))
 
         });
 
@@ -1075,7 +1075,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-            const fee_amount = ethers.utils.parseEther('5000');
+            const fee_amount = ethers.utils.parseEther('500');
 
             await feeToken.connect(receiver).approve(warden.address, fee_amount)
             await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
@@ -1161,7 +1161,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
             expect(await delegationBoost.token_cancel_time(token_id)).to.be.eq(0)
             expect(await delegationBoost.token_expiry(token_id)).to.be.eq(0)
 
-            const fee_amount = ethers.utils.parseEther('5000');
+            const fee_amount = ethers.utils.parseEther('500');
 
             await feeToken.connect(receiver).approve(warden.address, 0)
             await feeToken.connect(receiver).approve(warden.address, fee_amount)
@@ -1214,7 +1214,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
             await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-            const fee_amount = ethers.utils.parseEther('5000');
+            const fee_amount = ethers.utils.parseEther('500');
 
             await feeToken.connect(receiver).approve(warden.address, fee_amount)
             await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
@@ -1433,7 +1433,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
         const max_duration = 10
 
-        const new_base_price = BigNumber.from(2.5 * 1e10)
+        const new_base_price = BigNumber.from(2.5 * 1e8)
 
         beforeEach(async () => {
 
@@ -1675,7 +1675,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
                 await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
 
-                const fee_amount = ethers.utils.parseEther('5000');
+                const fee_amount = ethers.utils.parseEther('500');
 
                 await feeToken.connect(receiver).approve(warden.address, fee_amount)
                 await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
@@ -1847,7 +1847,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
             const lost_amount = ethers.utils.parseEther('100');
 
-            const fee_amount = ethers.utils.parseEther('5000');
+            const fee_amount = ethers.utils.parseEther('500');
 
 
             it(' should retrieve the lost tokens and send it to the admin', async () => {
@@ -1973,7 +1973,7 @@ describe('Warden contract tests - ' + network_name + ' version', () => {
 
         describe('withdrawFromReserve', async () => {
 
-            const fee_amount = ethers.utils.parseEther('5000');
+            const fee_amount = ethers.utils.parseEther('500');
 
             it(' should allow to withdraw from the reserve', async () => {
 
