@@ -4,6 +4,8 @@ import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
 
 const { provider } = ethers;
 
+require("dotenv").config();
+
 export async function getTimestamp(
     day: number,
     month: number,
@@ -20,6 +22,21 @@ export async function setBlockTimestamp(
 ) {
     await hre.network.provider.send("evm_setNextBlockTimestamp", [timestamp])
     await hre.network.provider.send("evm_mine")
+}
+
+export async function resetFork() {
+    await hre.network.provider.request({
+        method: "hardhat_reset",
+        params: [
+          {
+            forking: {
+                jsonRpcUrl: "https://eth-mainnet.alchemyapi.io/v2/" + (process.env.ALCHEMY_API_KEY || ''),
+                blockNumber: 14706474
+            },
+          },
+        ],
+    });
+
 }
 
 
