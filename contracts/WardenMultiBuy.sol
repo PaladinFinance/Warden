@@ -7,6 +7,7 @@ import "./open-zeppelin/utils/Ownable.sol";
 import "./Warden.sol";
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IVotingEscrowDelegation.sol";
+import "./utils/Errors.sol";
 
 /** @title WardenMultiBuy contract  */
 /**
@@ -125,20 +126,17 @@ contract WardenMultiBuy is Ownable {
         bool clearExpired
     ) external returns (bool) {
         // Checks over parameters
-        require(
-            receiver != address(0),
-            "Zero address"
-        );
-        require(boostAmount != 0 && totalFeesAmount != 0 && acceptableSlippage != 0, "Null value");
-        require(maxPrice != 0, "Null price");
+        if(receiver == address(0)) revert Errors.ZeroAddress();
+        if(boostAmount == 0 || totalFeesAmount == 0 || acceptableSlippage == 0) revert Errors.NullValue();
+        if(maxPrice == 0) revert Errors.NullPrice();
 
         MultiBuyVars memory vars;
 
         // Calculate the duration of veBoosts to purchase
         // & the mex total amount of fees to pay (using the maxPrice given as argument, Buyer should pay this amount or less in the end)
         vars.boostDuration = duration * 1 weeks;
-        require(vars.boostDuration >= warden.minDelegationTime(), "Duration too short");
-        require(((boostAmount * maxPrice * vars.boostDuration) / UNIT) <= totalFeesAmount, "Not Enough Fees");
+        if(vars.boostDuration < warden.minDelegationTime()) revert Errors.DurationTooShort();
+        if(((boostAmount * maxPrice * vars.boostDuration) / UNIT) > totalFeesAmount) revert Errors.NotEnoughFees();
 
         // Fetch the total number of Offers to loop over
         vars.totalNbOffers = warden.offersIndex();
@@ -215,7 +213,7 @@ contract WardenMultiBuy is Ownable {
             varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, duration, varsOffer.boostFeeAmount);
 
             // New tokenId should never be 0, if we receive a null ID, purchase failed
-            require(varsOffer.newTokenId != 0, "Boost buy fail");
+            if(varsOffer.newTokenId == 0) revert Errors.FailBoostPurchase();
 
             // Update the missingAmount, and the total amount purchased, with the last purchased executed
             vars.missingAmount -= varsOffer.toBuyAmount;
@@ -227,7 +225,7 @@ contract WardenMultiBuy is Ownable {
         // Compare the total purchased amount (sum of all veBoost amounts) with the given target amount
         // If the purchased amount does not fall in the acceptable slippage, revert the transaction
         if(vars.boughtAmount < ((boostAmount * (MAX_PCT - acceptableSlippage)) / MAX_PCT)) 
-            revert('Cannot match Order');
+            revert Errors.CannotMatchOrder();
 
         //Return all unused feeTokens to the Buyer
         vars.endBalance = feeToken.balanceOf(address(this));
@@ -325,12 +323,9 @@ contract WardenMultiBuy is Ownable {
         uint256[] memory sortedOfferIndexes
     ) internal returns(bool) {
         // Checks over parameters
-        require(
-            receiver != address(0),
-            "Zero address"
-        );
-        require(boostAmount != 0 && totalFeesAmount != 0 && acceptableSlippage != 0, "Null value");
-        require(maxPrice != 0, "Null price");
+        if(receiver == address(0)) revert Errors.ZeroAddress();
+        if(boostAmount == 0 || totalFeesAmount == 0 || acceptableSlippage == 0) revert Errors.NullValue();
+        if(maxPrice == 0) revert Errors.NullPrice();
 
 
         MultiBuyVars memory vars;
@@ -339,11 +334,11 @@ contract WardenMultiBuy is Ownable {
         // & the mex total amount of fees to pay (using the maxPrice given as argument, Buyer should pay this amount or less in the end)
         vars.boostDuration = duration * 1 weeks;
         vars.weeksDuration = duration;
-        require(vars.boostDuration >= warden.minDelegationTime(), "Duration too short");
-        require(((boostAmount * maxPrice * vars.boostDuration) / UNIT) <= totalFeesAmount, "Not Enough Fees");
+        if(vars.boostDuration < warden.minDelegationTime()) revert Errors.DurationTooShort();
+        if(((boostAmount * maxPrice * vars.boostDuration) / UNIT) > totalFeesAmount) revert Errors.NotEnoughFees();
 
         // Fetch the total number of Offers to loop over
-        require(sortedOfferIndexes.length != 0, "Empty Array");
+        if(sortedOfferIndexes.length == 0) revert Errors.EmptyArray();
 
         // Calculate the expiryTime of veBoosts to create (used for later check over Seller veCRV lock__end)
         vars.boostEndTime = block.timestamp + vars.boostDuration;
@@ -373,7 +368,7 @@ contract WardenMultiBuy is Ownable {
         for (uint256 i = 0; i < sortedOfferIndexes.length;) {
 
             // Check that the given Offer Index is valid & listed in Warden
-            require(sortedOfferIndexes[i] != 0 && sortedOfferIndexes[i] < warden.offersIndex(), "BoostOffer does not exist");
+            if(sortedOfferIndexes[i] == 0 || sortedOfferIndexes[i] >= warden.offersIndex()) revert Errors.InvalidBoostOffer();
 
             // Break the loop if the target veCRV amount is purchased
             if(vars.missingAmount == 0) break;
@@ -420,7 +415,7 @@ contract WardenMultiBuy is Ownable {
             varsOffer.newTokenId = warden.buyDelegationBoost(varsOffer.delegator, receiver, varsOffer.boostPercent, vars.weeksDuration, varsOffer.boostFeeAmount);
 
             // New tokenId should never be 0, if we receive a null ID, purchase failed
-            require(varsOffer.newTokenId != 0, "Boost buy fail");
+            if(varsOffer.newTokenId == 0) revert Errors.FailBoostPurchase();
 
             // Update the missingAmount, and the total amount purchased, with the last purchased executed
             vars.missingAmount -= varsOffer.toBuyAmount;
@@ -432,7 +427,7 @@ contract WardenMultiBuy is Ownable {
         // Compare the total purchased amount (sum of all veBoost amounts) with the given target amount
         // If the purchased amount does not fall in the acceptable slippage, revert the transaction
         if(vars.boughtAmount < ((boostAmount * (MAX_PCT - acceptableSlippage)) / MAX_PCT)) 
-            revert('Cannot match Order');
+            revert Errors.CannotMatchOrder();
 
         //Return all unused feeTokens to the Buyer
         vars.endBalance = feeToken.balanceOf(address(this));

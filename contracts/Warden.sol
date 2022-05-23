@@ -8,6 +8,7 @@ import "./open-zeppelin/utils/Pausable.sol";
 import "./open-zeppelin/utils/ReentrancyGuard.sol";
 import "./interfaces/IVotingEscrow.sol";
 import "./interfaces/IVotingEscrowDelegation.sol";
+import "./utils/Errors.sol";
 
 /** @title Warden contract  */
 /// @author Paladin
@@ -161,7 +162,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
 
     modifier onlyAllowed(){
-        require(msg.sender == reserveManager || msg.sender == owner(), "Warden: Not allowed");
+        if(msg.sender != reserveManager && msg.sender != owner()) revert Errors.CallerNotAllowed();
         _;
     }
 
@@ -202,7 +203,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     // Modifiers :
 
     modifier rewardStateUpdate() {
-        require(updateRewardState(), "Warden: Reward update fail");
+        if(!updateRewardState()) revert Errors.FailRewardUpdate();
         _;
     }
 
@@ -335,17 +336,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         bool useAdvicePrice
     ) external whenNotPaused rewardStateUpdate returns(bool) {
         address user = msg.sender;
-        require(userIndex[user] == 0, "Warden: Already registered");
-        require(
-            delegationBoost.isApprovedForAll(user, address(this)),
-            "Warden: Not operator for caller"
-        );
+        if(userIndex[user] != 0) revert Errors.AlreadyRegistered();
+        if(!delegationBoost.isApprovedForAll(user, address(this))) revert Errors.WardenNotOperator();
 
-        require(pricePerVote > 0, "Warden: Price cannot be 0");
-        require(maxPerc <= 10000, "Warden: maxPerc too high");
-        require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
-        require(minPerc >= minPercRequired, "Warden: minPerc too low");
-        require(maxDuration > 0, "Warden: MaxDuration cannot be 0");
+        if(pricePerVote == 0) revert Errors.NullPrice();
+        if(maxPerc > 10000) revert Errors.MaxPercTooHigh();
+        if(minPerc > maxPerc) revert Errors.MinPercOverMaxPerc();
+        if(minPerc < minPercRequired) revert Errors.MinPercTooLow();
+        if(maxDuration == 0) revert Errors.NullMaxDuration();
 
         // Create the BoostOffer for the new user, and add it to the storage
         userIndex[user] = offers.length;
@@ -373,18 +371,18 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Fet the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
-        require(index != 0, "Warden: Not registered");
+        if(index == 0) revert Errors.NotRegistered();
 
         // Fetch the BoostOffer to update
         BoostOffer storage offer = offers[index];
 
-        require(offer.user == msg.sender, "Warden: Not offer owner");
+        if(offer.user != msg.sender) revert Errors.NotOfferOwner();
 
-        require(pricePerVote > 0, "Warden: Price cannot be 0");
-        require(maxPerc <= 10000, "Warden: maxPerc too high");
-        require(minPerc <= maxPerc, "Warden: minPerc is over maxPerc");
-        require(minPerc >= minPercRequired, "Warden: minPerc too low");
-        require(maxDuration > 0, "Warden: MaxDuration cannot be 0");
+        if(pricePerVote == 0) revert Errors.NullPrice();
+        if(maxPerc > 10000) revert Errors.MaxPercTooHigh();
+        if(minPerc > maxPerc) revert Errors.MinPercOverMaxPerc();
+        if(minPerc < minPercRequired) revert Errors.MinPercTooLow();
+        if(maxDuration == 0) revert Errors.NullMaxDuration();
 
         // Update the parameters
         offer.pricePerVote = pricePerVote;
@@ -411,14 +409,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // Fet the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
-        require(index != 0, "Warden: Not registered");
+        if(index == 0) revert Errors.NotRegistered();
 
         // Fetch the BoostOffer to update
         BoostOffer storage offer = offers[index];
 
-        require(offer.user == msg.sender, "Warden: Not offer owner");
+        if(offer.user != msg.sender) revert Errors.NotOfferOwner();
 
-        require(pricePerVote > 0, "Warden: Price cannot be 0");
+        if(pricePerVote == 0) revert Errors.NullPrice();
 
         // Update the parameters
         offer.pricePerVote = pricePerVote;
@@ -457,7 +455,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      */
     function quit() external whenNotPaused nonReentrant rewardStateUpdate returns(bool) {
         address user = msg.sender;
-        require(userIndex[user] != 0, "Warden: Not registered");
+        if(userIndex[user] == 0) revert Errors.NotRegistered();
 
         // Check for unclaimed fees, claim it if needed
         if (earnedFees[user] > 0) {
@@ -495,38 +493,29 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 percent,
         uint256 duration //in weeks
     ) external view returns (uint256) {
-        require(delegator != address(0), "Warden: Zero address");
-        require(userIndex[delegator] != 0, "Warden: Not registered");
-        require(
-            percent >= minPercRequired,
-            "Warden: Percent under min required"
-        );
-        require(percent <= MAX_PCT, "Warden: Percent over 100");
+        if(delegator == address(0)) revert Errors.ZeroAddress();
+        if(userIndex[delegator] == 0) revert Errors.NotRegistered();
+        if(percent < minPercRequired) revert Errors.PercentUnderMinRequired();
+        if(percent > MAX_PCT) revert Errors.PercentOverMax();
 
         // Fetch the BoostOffer for the delegator
         BoostOffer storage offer = offers[userIndex[delegator]];
 
         //Check that the duration is less or equal to Offer maxDuration
-        require(duration <= offer.maxDuration, "Warden: duration over Offer max");
+        if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
         // Get the duration in seconds, and check it's more than the minimum required
         uint256 durationSeconds = duration * 1 weeks;
-        require(
-            durationSeconds >= minDelegationTime,
-            "Warden: Duration too short"
-        );
+        if(durationSeconds < minDelegationTime) revert Errors.DurationTooShort();
 
-        require(
-            percent >= offer.minPerc && percent <= offer.maxPerc,
-            "Warden: Percent out of Offer bounds"
-        );
+        if(percent < offer.minPerc || percent > offer.maxPerc) 
+            revert Errors.PercentOutOfferBonds();
+
         uint256 expiryTime = ((block.timestamp + durationSeconds) / WEEK) * WEEK;
         expiryTime = (expiryTime < block.timestamp + durationSeconds) ?
             ((block.timestamp + durationSeconds + WEEK) / WEEK) * WEEK :
             expiryTime;
-        require(
-            expiryTime <= votingEscrow.locked(delegator).end,
-            "Warden: Lock expires before Boost"
-        );
+
+        if(expiryTime > votingEscrow.locked(delegator).end) revert Errors.LockEndTooShort();
 
         // Find how much of the delegator's tokens the given percent represents
         uint256 delegatorBalance = votingEscrow.balanceOf(delegator);
@@ -578,17 +567,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 duration, //in weeks
         uint256 maxFeeAmount
     ) external nonReentrant whenNotPaused rewardStateUpdate returns(uint256) {
-        require(
-            delegator != address(0) && receiver != address(0),
-            "Warden: Zero address"
-        );
-        require(userIndex[delegator] != 0, "Warden: Not registered");
-        require(maxFeeAmount > 0, "Warden: No fees");
-        require(
-            percent >= minPercRequired,
-            "Warden: Percent under min required"
-        );
-        require(percent <= MAX_PCT, "Warden: Percent over 100");
+        if(delegator == address(0) || receiver == address(0)) revert Errors.ZeroAddress();
+        if(userIndex[delegator] == 0) revert Errors.NotRegistered();
+        if(maxFeeAmount == 0) revert Errors.NullFees();
+        if(percent < minPercRequired) revert Errors.PercentUnderMinRequired();
+        if(percent > MAX_PCT) revert Errors.PercentOverMax();
 
         BuyVars memory vars;
 
@@ -596,19 +579,13 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         BoostOffer storage offer = offers[userIndex[delegator]];
 
         //Check that the duration is less or equal to Offer maxDuration
-        require(duration <= offer.maxDuration, "Warden: duration over Offer max");
+        if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
 
         // Get the duration of the wanted Boost in seconds
         vars.boostDuration = duration * 1 weeks;
-        require(
-            vars.boostDuration >= minDelegationTime,
-            "Warden: Duration too short"
-        );
+        if(vars.boostDuration < minDelegationTime) revert Errors.DurationTooShort();
 
-        require(
-            percent >= offer.minPerc && percent <= offer.maxPerc,
-            "Warden: Percent out of Offer bounds"
-        );
+        if(percent < offer.minPerc || percent > offer.maxPerc) revert Errors.PercentOutOfferBonds();
 
         // Find how much of the delegator's tokens the given percent represents
         vars.delegatorBalance = votingEscrow.balanceOf(delegator);
@@ -616,10 +593,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         // Check if delegator can delegate the amount, without exceeding the maximum percent allowed by the delegator
         // _canDelegate will also try to cancel expired Boosts of the deelgator to free more tokens for delegation
-        require(
-            _canDelegate(delegator, vars.toDelegateAmount, offer.maxPerc),
-            "Warden: Cannot delegate"
-        );
+        if(!_canDelegate(delegator, vars.toDelegateAmount, offer.maxPerc)) revert Errors.CannotDelegate();
 
         //Should we use the Offer price or the advised one
         vars.pricePerVote = offer.useAdvicePrice ? advisedPrice : offer.pricePerVote;
@@ -628,10 +602,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         // and check the maxFeeAmount provided (and approved beforehand) is enough.
         // Calculated using the pricePerVote set by the delegator
         vars.realFeeAmount = (vars.toDelegateAmount * vars.pricePerVote * vars.boostDuration) / UNIT;
-        require(
-            vars.realFeeAmount <= maxFeeAmount,
-            "Warden: Fees do not cover Boost duration"
-        );
+        if(vars.realFeeAmount > maxFeeAmount) revert Errors.FeesTooLow();
 
         // Pull the tokens from the buyer, setting it as earned fees for the delegator (and part of it for the Reserve)
         _pullFees(msg.sender, vars.realFeeAmount, delegator);
@@ -647,10 +618,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         vars.expiryTime = (vars.expiryTime < block.timestamp + vars.boostDuration) ?
             ((block.timestamp + vars.boostDuration + WEEK) / WEEK) * WEEK :
             vars.expiryTime;
-        require(
-            vars.expiryTime <= votingEscrow.locked(delegator).end,
-            "Warden: Lock expires before Boost"
-        );
+
+        if(vars.expiryTime > votingEscrow.locked(delegator).end) revert Errors.LockEndTooShort();
 
         // VotingEscrowDelegation needs the percent of available tokens for delegation when creating the boost, instead of
         // the percent of the users balance. We calculate this percent representing the amount of tokens wanted by the buyer
@@ -677,11 +646,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         // Fetch the tokenId for the new DelegationBoost that was created, and check it was set for the correct delegator
         vars.newTokenId = delegationBoost.get_token_id(delegator, vars.newId);
-        require(
-            vars.newTokenId ==
-                delegationBoost.token_of_delegator_by_index(delegator, vars.newId),
-            "Warden: DelegationBoost failed"
-        );
+        if(
+            vars.newTokenId !=
+                delegationBoost.token_of_delegator_by_index(delegator, vars.newId)
+        ) revert Errors.FailDelegationBoost();
 
         // If rewards were started, otherwise no need to write for that Boost
         if(nextUpdatePeriod != 0) { 
@@ -768,7 +736,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             return true;
         }
 
-        revert("Cannot cancel the boost");
+        revert Errors.CannotCancelBoost();
     }
 
     /**
@@ -785,10 +753,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @dev Send all the user's earned fees
      */
     function claim() external nonReentrant rewardStateUpdate returns(bool) {
-        require(
-            earnedFees[msg.sender] != 0,
-            "Warden: Claim null amount"
-        );
+        if(earnedFees[msg.sender] == 0) revert Errors.NullClaimAmount();
         return _claim(msg.sender, earnedFees[msg.sender]);
     }
 
@@ -807,11 +772,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param amount Amount of earned fees to claim
      */
     function claim(uint256 amount) external nonReentrant rewardStateUpdate returns(bool) {
-        require(amount <= earnedFees[msg.sender], "Warden: Amount too high");
-        require(
-            amount != 0,
-            "Warden: Claim null amount"
-        );
+        if(amount > earnedFees[msg.sender]) revert Errors.AmountTooHigh();
+        if(amount == 0) revert Errors.NullClaimAmount();
         return _claim(msg.sender, amount);
     }
 
@@ -839,10 +801,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param boostId Id of the veBoost
      */
     function getBoostReward(uint256 boostId) external view returns(uint256) {
-        require(
-            boostId != 0,
-            "Warden: IncorrectBoost"
-        );
+        if(boostId == 0) revert Errors.InvalidBoostId();
         return _getBoostRewardAmount(boostId);
     }
 
@@ -852,10 +811,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param boostId Id of the veBoost
      */
     function claimBoostReward(uint256 boostId) external nonReentrant rewardStateUpdate returns(bool) {
-        require(
-            boostId != 0,
-            "Warden: IncorrectBoost"
-        );
+        if(boostId == 0) revert Errors.InvalidBoostId();
         return _claimBoostRewards(boostId);
     }
 
@@ -867,10 +823,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function claimMultipleBoostReward(uint256[] calldata boostIds) external nonReentrant rewardStateUpdate returns(bool) {
         uint256 length = boostIds.length;
         for(uint256 i; i < length;) {
-            require(
-                boostIds[i] != 0,
-                "Warden: IncorrectBoost"
-            );
+            if(boostIds[i] == 0) revert Errors.InvalidBoostId();
             require(_claimBoostRewards(boostIds[i]));
 
             unchecked{ ++i; }
@@ -1019,14 +972,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     function _claim(address user, uint256 amount) internal returns(bool) {
-        require(
-            !_claimBlocked,
-            "Warden: Claim blocked"
-        );
-        require(
-            amount <= feeToken.balanceOf(address(this)),
-            "Warden: Insufficient cash"
-        );
+        if(_claimBlocked) revert Errors.ClaimBlocked();
+        if(amount > feeToken.balanceOf(address(this))) revert Errors.InsufficientCash();
 
         if(amount == 0) return true; // nothing to claim, but used in claimAndCancel()
 
@@ -1045,10 +992,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     function _getBoostRewardAmount(uint256 boostId) internal view returns(uint256) {
         PurchasedBoost memory boost = purchasedBoosts[boostId];
-        require(boost.buyer != address(0), "Warden: no reward for boost");
+        if(boost.buyer == address(0)) revert Errors.BoostRewardsNull();
         if(boost.claimed) return 0;
         if(currentPeriod() <= boost.endTimestamp) return 0;
-        require(nextUpdatePeriod > boost.endTimestamp, "Warden: reward not updated");
+        if(nextUpdatePeriod <= boost.endTimestamp) revert Errors.RewardsNotUpdated();
 
         uint256 boostAmount = boost.amount;
         uint256 boostDuration = boost.endTimestamp - boost.startTimestamp;
@@ -1102,22 +1049,19 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     function _claimBoostRewards(uint256 boostId) internal returns(bool) {
-        require(nextUpdatePeriod != 0, "Warden: reward not started");
+        if(nextUpdatePeriod == 0) revert Errors.RewardsNotStarted();
         PurchasedBoost storage boost = purchasedBoosts[boostId];
-        require(boost.buyer != address(0), "Warden: no reward for boost");
+        if(boost.buyer == address(0)) revert Errors.BoostRewardsNull();
 
-        require(msg.sender == boost.buyer, "Warden: not buyer");
-        require(!boost.claimed, "Warden: already claimed");
-        require(currentPeriod() > boost.endTimestamp, "Warden: cannot claim");
+        if(msg.sender != boost.buyer) revert Errors.NotBoostBuyer();
+        if(boost.claimed) revert Errors.AlreadyClaimed();
+        if(currentPeriod() <= boost.endTimestamp) revert Errors.CannotClaim();
 
         uint256 rewardAmount = _getBoostRewardAmount(boostId);
 
         if(rewardAmount == 0) return true; // nothing to claim, return
 
-        require(
-            rewardAmount <= rewardToken.balanceOf(address(this)),
-            "Warden: Insufficient reward cash"
-        );
+        if(rewardAmount > rewardToken.balanceOf(address(this))) revert Errors.InsufficientRewardCash();
 
         boost.claimed = true;
 
@@ -1140,8 +1084,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     // Manager methods:
 
     function setAdvisedPrice(uint256 newPrice) external {
-        require(approvedManagers[msg.sender], "Warden: Caller not allowed");
-        require(newPrice > 0, "Warden: Null value");
+        if(!approvedManagers[msg.sender]) revert Errors.CallerNotManager();
+        if(newPrice == 0) revert Errors.NullValue();
         advisedPrice = newPrice;
 
         emit NewAdvisedPrice(newPrice);
@@ -1155,10 +1099,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 _minWeeklyDropPerVote,
         uint256 _targetPurchaseAmount
     ) external onlyOwner {
-        require(_rewardToken != address(0));
-        require(_baseWeeklyDropPerVote != 0 && _minWeeklyDropPerVote != 0 &&  _targetPurchaseAmount != 0);
-        require(_baseWeeklyDropPerVote >= _minWeeklyDropPerVote);
-        require(nextUpdatePeriod == 0, "Warden: already started");
+        if(_rewardToken == address(0)) revert Errors.ZeroAddress();
+        if(_baseWeeklyDropPerVote == 0 || _minWeeklyDropPerVote == 0 ||  _targetPurchaseAmount == 0) revert Errors.NullValue();
+        if(_baseWeeklyDropPerVote < _minWeeklyDropPerVote) revert Errors.BaseDropTooLow();
+        if(nextUpdatePeriod != 0) revert Errors.RewardsAlreadyStarted();
 
         rewardToken = IERC20(_rewardToken);
 
@@ -1176,19 +1120,19 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     function setBaseWeeklyDropPerVote(uint256 newBaseWeeklyDropPerVote) external onlyOwner {
-        require(newBaseWeeklyDropPerVote != 0);
-        require(newBaseWeeklyDropPerVote >= minWeeklyDropPerVote);
+        if(newBaseWeeklyDropPerVote == 0) revert Errors.NullValue();
+        if(newBaseWeeklyDropPerVote < minWeeklyDropPerVote) revert Errors.BaseDropTooLow();
         baseWeeklyDropPerVote = newBaseWeeklyDropPerVote;
     }
 
     function setMinWeeklyDropPerVote(uint256 newMinWeeklyDropPerVote) external onlyOwner {
-        require(newMinWeeklyDropPerVote != 0);
-        require(baseWeeklyDropPerVote >= newMinWeeklyDropPerVote);
+        if(newMinWeeklyDropPerVote == 0) revert Errors.NullValue();
+        if(baseWeeklyDropPerVote < newMinWeeklyDropPerVote) revert Errors.MinDropTooHigh();
         minWeeklyDropPerVote = newMinWeeklyDropPerVote;
     }
 
     function setTargetPurchaseAmount(uint256 newTargetPurchaseAmount) external onlyOwner {
-        require(newTargetPurchaseAmount != 0);
+        if(newTargetPurchaseAmount == 0) revert Errors.NullValue();
         targetPurchaseAmount = newTargetPurchaseAmount;
     }
 
@@ -1197,7 +1141,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param newMinPercRequired New minimum percent required to buy a Boost (in BPS)
      */
     function setMinPercRequired(uint256 newMinPercRequired) external onlyOwner {
-        require(newMinPercRequired > 0 && newMinPercRequired <= 10000);
+        if(newMinPercRequired == 0 || newMinPercRequired > 10000) revert Errors.InvalidValue();
         minPercRequired = newMinPercRequired;
     }
 
@@ -1206,7 +1150,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param newMinDelegationTime New minimum deelgation time (in seconds)
      */
     function setMinDelegationTime(uint256 newMinDelegationTime) external onlyOwner {
-        require(newMinDelegationTime > 0);
+        if(newMinDelegationTime == 0) revert Errors.NullValue();
         minDelegationTime = newMinDelegationTime;
     }
 
@@ -1215,7 +1159,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param newFeeReserveRatio New ratio (in BPS)
      */
     function setFeeReserveRatio(uint256 newFeeReserveRatio) external onlyOwner {
-        require(newFeeReserveRatio <= 5000);
+        if(newFeeReserveRatio > 5000) revert Errors.InvalidValue();
         feeReserveRatio = newFeeReserveRatio;
     }
 
@@ -1241,7 +1185,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     * @param newManager Address to add
     */
     function approveManager(address newManager) external onlyOwner {
-        require(newManager != address(0));
+        if(newManager == address(0)) revert Errors.ZeroAddress();
         approvedManagers[newManager] = true;
     }
    
@@ -1251,7 +1195,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     * @param manager Address to remove
     */
     function removeManager(address manager) external onlyOwner {
-        require(manager != address(0));
+        if(manager == address(0)) revert Errors.ZeroAddress();
         approvedManagers[manager] = false;
     }
 
@@ -1273,10 +1217,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Block user fee claims
      */
     function blockClaim() external onlyOwner {
-        require(
-            !_claimBlocked,
-            "Warden: Claim blocked"
-        );
+        if(_claimBlocked) revert Errors.ClaimBlocked();
         _claimBlocked = true;
     }
 
@@ -1284,10 +1225,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Unblock user fee claims
      */
     function unblockClaim() external onlyOwner {
-        require(
-            _claimBlocked,
-            "Warden: Claim not blocked"
-        );
+        if(!_claimBlocked) revert Errors.ClaimNotBlocked();
         _claimBlocked = false;
     }
 
@@ -1297,7 +1235,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @param amount Amount to transfer (in wei)
      */
     function withdrawERC20(address token, uint256 amount) external onlyOwner returns(bool) {
-        require(_claimBlocked || token != address(feeToken)); //We want to be able to recover the fees if there is an issue
+        if(!_claimBlocked && token == address(feeToken)) revert Errors.CannotWithdrawFeeToken(); //We want to be able to recover the fees if there is an issue
         IERC20(token).safeTransfer(owner(), amount);
 
         return true;
@@ -1311,7 +1249,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     }
 
     function withdrawFromReserve(uint256 amount) external onlyAllowed returns(bool) {
-        require(amount <= reserveAmount, "Warden: Reserve too low");
+        if(amount > reserveAmount) revert Errors.ReserveTooLow();
         reserveAmount = reserveAmount - amount;
         feeToken.safeTransfer(reserveManager, amount);
 
