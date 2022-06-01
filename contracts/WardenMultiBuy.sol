@@ -190,7 +190,7 @@ contract WardenMultiBuy is Ownable {
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
 
             // Fetch the Offer data
-            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration, varsOffer.offerminPercent,) = warden.getOffer(i);
+            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration,, varsOffer.offerminPercent,) = warden.getOffer(i);
 
             //If the asked duration is over the max duration for this offer, we skip
             if(duration > varsOffer.offerMaxDuration) {
@@ -392,7 +392,7 @@ contract WardenMultiBuy is Ownable {
             varsOffer.toBuyAmount = varsOffer.availableUserBalance > vars.missingAmount ? vars.missingAmount : varsOffer.availableUserBalance;
 
             // Fetch the Offer data
-            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration, varsOffer.offerminPercent,) = warden.getOffer(sortedOfferIndexes[i]);
+            (varsOffer.delegator, varsOffer.offerPrice, varsOffer.offerMaxDuration,, varsOffer.offerminPercent,) = warden.getOffer(sortedOfferIndexes[i]);
 
             //If the asked duration is over the max duration for this offer, we skip
             if(duration > varsOffer.offerMaxDuration) {
@@ -455,7 +455,7 @@ contract WardenMultiBuy is Ownable {
         OfferInfos[] memory offersList = new OfferInfos[](totalNbOffers - 1);
         uint256 length = offersList.length;
         for(uint256 i = 0; i < length;){ //Because the 0 index is an empty Offer
-            (offersList[i].user, offersList[i].price,,,) = warden.getOffer(i + 1);
+            (offersList[i].user, offersList[i].price,,,,) = warden.getOffer(i + 1);
 
             unchecked{ ++i; }
         }
@@ -508,12 +508,16 @@ contract WardenMultiBuy is Ownable {
             address delegator,
             uint256 offerPrice,
             ,
+            uint256 offerExpiryTime,
             uint256 minPerc,
             uint256 maxPerc
         ) = warden.getOffer(offerIndex);
 
         // Price of the Offer is over the maxPrice given
         if (offerPrice > maxPrice) return 0;
+
+        // The Offer is expired
+        if (block.timestamp > offerExpiryTime) return 0;
 
         // Warden cannot create the Boost
         if (!delegationBoost.isApprovedForAll(delegator, address(warden))) return 0;
@@ -526,10 +530,10 @@ contract WardenMultiBuy is Ownable {
         // Total amount currently delegated
         uint256 delegatedBalance = delegationBoost.delegated_boost(delegator);
 
-        // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
-        uint256 blockedBalance = (userBalance * (MAX_PCT - maxPerc)) / MAX_PCT;
-
-        uint256 availableBalance = userBalance - blockedBalance;
+        // Remove the percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
+        uint256 availableBalance = userBalance - (
+            (userBalance * (MAX_PCT - maxPerc)) / MAX_PCT
+        );
 
         // Minmum amount of veCRV for the boost for this Offer
         uint256 minBoostAmount = (userBalance * minPerc) / MAX_PCT;

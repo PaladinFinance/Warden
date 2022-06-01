@@ -24,6 +24,7 @@ library Errors {
     // Registration Errors
     error NullPrice();
     error NullMaxDuration();
+    error IncorrectExpiry();
     error MaxPercTooHigh();
     error MinPercOverMaxPerc();
     error MinPercTooLow();
@@ -32,6 +33,7 @@ library Errors {
     error PercentUnderMinRequired();
     error PercentOverMax();
     error DurationOverOfferMaxDuration();
+    error OfferExpired();
     error DurationTooShort();
     error PercentOutOfferBonds();
     error LockEndTooShort();

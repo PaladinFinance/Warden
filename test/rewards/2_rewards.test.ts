@@ -68,6 +68,8 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
 
     const price_per_vote = BigNumber.from(8.25 * 1e10) // ~ 50CRV for a 1000 veCRV boost for a week
 
+    const expiry_time = 0 // so Warden will use the lock end instead
+
     const base_advised_price = BigNumber.from(1.25 * 1e10)
 
     const total_reward_amount = ethers.utils.parseEther('200000');
@@ -337,7 +339,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
                 targetPurchaseAmount
             )
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
@@ -706,7 +708,7 @@ describe('Warden rewards tests - part 2 - ' + ve_token_name + ' version', () => 
             )
             await resetVeLock(true)
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
