@@ -38,6 +38,8 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         uint256 pricePerVote;
         // Max duration a Boost from this offer can last
         uint64 maxDuration;
+        // Timestamp of expiry of the Offer
+        uint64 expiryTime;
         // Minimum percent of users voting token balance to buy for a Boost
         uint16 minPerc; //bps
         // Maximum percent of users total voting token balance available to delegate
@@ -197,7 +199,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         // fill index 0 in the offers array
         // since we want to use index 0 for unregistered users
-        offers.push(BoostOffer(address(0), 0, 0, 0, 0, false));
+        offers.push(BoostOffer(address(0), 0, 0, 0, 0, 0, false));
     }
 
     // Modifiers :
@@ -331,6 +333,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function register(
         uint256 pricePerVote,
         uint64 maxDuration,
+        uint64 expiryTime,
         uint16 minPerc,
         uint16 maxPerc,
         bool useAdvicePrice
@@ -344,10 +347,13 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(minPerc > maxPerc) revert Errors.MinPercOverMaxPerc();
         if(minPerc < minPercRequired) revert Errors.MinPercTooLow();
         if(maxDuration == 0) revert Errors.NullMaxDuration();
+        if(expiryTime != 0 && expiryTime < (block.timestamp + (WEEK * (maxDuration + 1)))) revert Errors.IncorrectExpiry();
+
+        if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked(user).end);
 
         // Create the BoostOffer for the new user, and add it to the storage
         userIndex[user] = offers.length;
-        offers.push(BoostOffer(user, pricePerVote, maxDuration, minPerc, maxPerc, useAdvicePrice));
+        offers.push(BoostOffer(user, pricePerVote, maxDuration, expiryTime, minPerc, maxPerc, useAdvicePrice));
 
         emit Registred(user, pricePerVote);
 
@@ -364,11 +370,12 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
     function updateOffer(
         uint256 pricePerVote,
         uint64 maxDuration,
+        uint64 expiryTime,
         uint16 minPerc,
         uint16 maxPerc,
         bool useAdvicePrice
     ) external whenNotPaused rewardStateUpdate returns(bool) {
-        // Fet the user index, and check for registration
+        // Fetch the user index, and check for registration
         address user = msg.sender;
         uint256 index = userIndex[user];
         if(index == 0) revert Errors.NotRegistered();
@@ -383,10 +390,14 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(minPerc > maxPerc) revert Errors.MinPercOverMaxPerc();
         if(minPerc < minPercRequired) revert Errors.MinPercTooLow();
         if(maxDuration == 0) revert Errors.NullMaxDuration();
+        if(expiryTime != 0 && expiryTime < (block.timestamp + (WEEK * (maxDuration + 1)))) revert Errors.IncorrectExpiry();
+
+        if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked(user).end);
 
         // Update the parameters
         offer.pricePerVote = pricePerVote;
         offer.maxDuration = maxDuration;
+        offer.expiryTime = expiryTime;
         offer.minPerc = minPerc;
         offer.maxPerc = maxPerc;
         offer.useAdvicePrice = useAdvicePrice;
@@ -436,6 +447,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         address user,
         uint256 pricePerVote,
         uint64 maxDuration,
+        uint64 expiryTime,
         uint16 minPerc,
         uint16 maxPerc
     ) {
@@ -444,6 +456,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
             offer.user,
             offer.useAdvicePrice ? advisedPrice : offer.pricePerVote,
             offer.maxDuration,
+            offer.expiryTime,
             offer.minPerc,
             offer.maxPerc
         );
@@ -503,6 +516,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         //Check that the duration is less or equal to Offer maxDuration
         if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
+        if(block.timestamp > offer.expiryTime) revert Errors.OfferExpired();
         // Get the duration in seconds, and check it's more than the minimum required
         uint256 durationSeconds = duration * 1 weeks;
         if(durationSeconds < minDelegationTime) revert Errors.DurationTooShort();
@@ -580,6 +594,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
         //Check that the duration is less or equal to Offer maxDuration
         if(duration > offer.maxDuration) revert Errors.DurationOverOfferMaxDuration();
+        if(block.timestamp > offer.expiryTime) revert Errors.OfferExpired();
 
         // Get the duration of the wanted Boost in seconds
         vars.boostDuration = duration * 1 weeks;

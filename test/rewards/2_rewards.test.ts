@@ -75,6 +75,7 @@ describe('Warden rewards tests - part 2 - ' + network_name + ' version', () => {
     const base_advised_price = BigNumber.from(1.25 * 1e8)
 
     const total_reward_amount = ethers.utils.parseEther('20000');
+    const expiry_time = 0 // so Warden will use the lock end instead
 
     const lock_amount = ethers.utils.parseEther('15000');
 
@@ -336,7 +337,7 @@ describe('Warden rewards tests - part 2 - ' + network_name + ' version', () => {
                 targetPurchaseAmount
             )
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
@@ -705,7 +706,7 @@ describe('Warden rewards tests - part 2 - ' + network_name + ' version', () => {
             )
             await resetVeLock(true)
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 

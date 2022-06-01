@@ -72,6 +72,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
     const price_per_vote = BigNumber.from(4.25 * 1e8)
 
     const base_advised_price = BigNumber.from(1.25 * 1e8)
+    const expiry_time = 0 // so Warden will use the lock end instead
 
     const total_reward_amount = ethers.utils.parseEther('20000');
 
@@ -305,7 +306,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
         it(' should not update the reward state through other methods', async () => {
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             let current_block = await ethers.provider.getBlock(await ethers.provider.getBlockNumber())
             let current_period = BigNumber.from(current_block.timestamp).div(WEEK).mul(WEEK)
@@ -428,7 +429,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
         it(' should not write Boost Purchases', async () => {
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             fee_amount = await warden.estimateFees(delegator.address, buy_percent, duration)
 
@@ -865,7 +866,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
 
             const weekly_drop = targetPurchaseAmount.mul(baseDropPerVote).div(UNIT)
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             undistributed_amount = undistributed_amount.add(targetPurchaseAmount.mul(baseDropPerVote).div(UNIT))
 
@@ -1086,7 +1087,7 @@ describe('Warden rewards tests - ' + network_name + ' version', () => {
                 new_targetPurchaseAmount
             )
 
-            await warden.connect(delegator).register(price_per_vote, max_duration, min_perc, max_perc, false);
+            await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
             await feeToken.connect(receiver).approve(warden.address, ethers.constants.MaxUint256)
 
