@@ -54,7 +54,7 @@ contract WardenLens {
 
     // Check if given delegator could delegate with his minPerc parameter used
     function canDelegate(address delegator) external view returns(bool) {
-        ( , , ,uint256 delegatorMinPerc, ) = warden.getOffer(warden.userIndex(delegator));
+        ( , , , ,uint256 delegatorMinPerc, ) = warden.getOffer(warden.userIndex(delegator));
         uint256 balance = votingEscrow.balanceOf(delegator);
         return _canDelegate(delegator, (balance * delegatorMinPerc) / MAX_PCT);
 
@@ -99,7 +99,9 @@ contract WardenLens {
         // Total amount currently delegated
         vars.delegatedBalance = delegationBoost.delegated_boost(delegator);
 
-        ( , , , ,uint256 delegatorMaxPerc) = warden.getOffer(warden.userIndex(delegator));
+        ( , , ,uint64 expiryTime, ,uint256 delegatorMaxPerc) = warden.getOffer(warden.userIndex(delegator));
+
+        if(block.timestamp > expiryTime) return false;
 
         // Percent of delegator balance not allowed to delegate (as set by maxPerc in the BoostOffer)
         uint256 blockedBalance = (vars.balance * (MAX_PCT - delegatorMaxPerc)) /
@@ -150,7 +152,7 @@ contract WardenLens {
         uint256 availableIndex = 0;
 
         for(uint256 i = 1; i < totalNbOffers;){ //since the offer at index 0 is useless
-            (address delegator , , ,uint256 minPerc ,) = warden.getOffer(i);
+            (address delegator , , , ,uint256 minPerc ,) = warden.getOffer(i);
             uint256 balance = votingEscrow.balanceOf(delegator);
             if(_canDelegate(delegator, (balance * minPerc) / MAX_PCT)){
                 availableDelegators[availableIndex] = delegator;
@@ -178,7 +180,7 @@ contract WardenLens {
         prices.lowest = MAX_UINT; //Set max amount as lowest value instead of 0
 
         for(uint256 i = 1; i < totalNbOffers;){ //since the offer at index 0 is useless
-            (,uint256 offerPrice,,,) = warden.getOffer(i);
+            (,uint256 offerPrice,,,,) = warden.getOffer(i);
 
             sumPrices += offerPrice;
 
