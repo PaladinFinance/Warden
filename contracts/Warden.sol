@@ -691,10 +691,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
                 vars.currentRewardIndex,
                 uint128(block.timestamp),
                 uint128(vars.expiryTime),
-                msg.sender,
+                receiver,
                 false
             );
-            userPurchasedBoosts[msg.sender].push(vars.newTokenId);
+            userPurchasedBoosts[receiver].push(vars.newTokenId);
         }
 
         emit BoostPurchase(
