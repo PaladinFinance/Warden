@@ -347,7 +347,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(minPerc > maxPerc) revert Errors.MinPercOverMaxPerc();
         if(minPerc < minPercRequired) revert Errors.MinPercTooLow();
         if(maxDuration == 0) revert Errors.NullMaxDuration();
-        if(expiryTime != 0 && expiryTime < (block.timestamp + (WEEK * (maxDuration + 1)))) revert Errors.IncorrectExpiry();
+        if(expiryTime != 0 && expiryTime < (block.timestamp + WEEK)) revert Errors.IncorrectExpiry();
 
         if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked__end(user));
 
@@ -390,7 +390,7 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         if(minPerc > maxPerc) revert Errors.MinPercOverMaxPerc();
         if(minPerc < minPercRequired) revert Errors.MinPercTooLow();
         if(maxDuration == 0) revert Errors.NullMaxDuration();
-        if(expiryTime != 0 && expiryTime < (block.timestamp + (WEEK * (maxDuration + 1)))) revert Errors.IncorrectExpiry();
+        if(expiryTime != 0 && expiryTime < (block.timestamp + WEEK)) revert Errors.IncorrectExpiry();
 
         if(expiryTime == 0) expiryTime = uint64(votingEscrow.locked__end(user));
 

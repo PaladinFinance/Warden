@@ -223,7 +223,7 @@ describe('Warden contract tests', () => {
 
             const current_time = BigNumber.from((await provider.getBlock(await provider.getBlockNumber())).timestamp)
 
-            const wrong_expiry_time = current_time.add(WEEK.mul(max_duration - 2))
+            const wrong_expiry_time = current_time.add(WEEK.div(2))
 
             await expect(
                 warden.connect(delegator).register(price_per_vote, max_duration, wrong_expiry_time, min_perc, max_perc, true)
@@ -306,7 +306,7 @@ describe('Warden contract tests', () => {
 
             expiry_time = current_time.add(WEEK.mul(max_duration + 3))
             new_expiry_time = current_time.add(WEEK.mul(new_max_duration + 5))
-            incorrect_expiry_time = current_time.add(WEEK.mul(new_max_duration - 3))
+            incorrect_expiry_time = current_time.add(WEEK.div(2))
 
             await warden.connect(delegator).register(price_per_vote, max_duration, expiry_time, min_perc, max_perc, false);
 
