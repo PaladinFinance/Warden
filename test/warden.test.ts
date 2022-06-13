@@ -2165,7 +2165,7 @@ describe('Warden contract tests - ' + ve_token_name + ' version', () => {
                 await warden.connect(admin).setReserveManager(reserveManager.address)
 
                 await feeToken.connect(receiver).approve(warden.address, fee_amount)
-                await warden.connect(delegator).register(price_per_vote, 10, 1000, 0, 10000, false);
+                await warden.connect(delegator).register(price_per_vote, 10, 0, 1000, 10000, false);
 
                 await warden.connect(receiver).buyDelegationBoost(delegator.address, receiver.address, 10000, 1, fee_amount);
 

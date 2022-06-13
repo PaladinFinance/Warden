@@ -292,7 +292,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
         const incorrect_fee_amount = amount.mul(max_price.div(5)).mul(one_week.mul(duration)).div(unit)
         const bigger_fee_amount = bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
-        const accepted_slippage = 10 // 0.1 %
+        const accepted_slippage = 100 // 1 %
 
         const minRequiredAmount = BigNumber.from(0)
         const bigger_minRequiredAmount = ethers.utils.parseEther('200')
@@ -863,15 +863,19 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
 
         it(' should skip Offer where delegator removed Warden as Operator', async () => {
 
+            const other_amount = ethers.utils.parseEther('600')
+
+            const other_fee_amount = other_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
+
             await delegationBoost.connect(delegator3).setApprovalForAll(warden.address, false);
 
             const buy_tx = await multiBuy.connect(receiver).simpleMultiBuy(
                 receiver.address,
                 duration,
-                amount,
+                other_amount,
                 max_price,
                 minRequiredAmount,
-                fee_amount,
+                other_fee_amount,
                 accepted_slippage,
                 false
             )
@@ -889,7 +893,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
             const expected_offers_indexes_order = [1,2,4] // Expected Offers to have been used by the multiBuy
             let effective_total_boost_amount = BigNumber.from(0)
 
-            const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
+            const expected_total_boost_amount_with_slippage = other_amount.mul(BPS - accepted_slippage).div(BPS)
 
             // Get the users that emitted Boosts => Get the offers that have been used
             for(let e of events){
@@ -920,7 +924,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
 
             //Homemade check :
             //amount with slippage <= effective boost amount <= requested amount
-            expect(effective_total_boost_amount).to.be.lte(amount)
+            expect(effective_total_boost_amount).to.be.lte(other_amount)
             expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
 
             const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
@@ -1435,14 +1439,17 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
         describe('other multiBuy tests', async () => {
 
             it(' should skip Offers with available balance under the min Required', async () => {
+    
+                const slightly_smaller_amount = ethers.utils.parseEther('650')
+                const slightly_smaller_fee_amount = slightly_smaller_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
 
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(
                     receiver.address,
                     duration,
-                    amount,
+                    slightly_smaller_amount,
                     max_price,
                     bigger_minRequiredAmount,
-                    fee_amount,
+                    slightly_smaller_fee_amount,
                     accepted_slippage,
                     false,
                     preSorted_Offers_list
@@ -1461,7 +1468,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
                 const expected_offers_indexes_order = [7,4] // Expected Offers to have been used by the multiBuy
                 let effective_total_boost_amount = BigNumber.from(0)
     
-                const expected_total_boost_amount_with_slippage = amount.mul(BPS - accepted_slippage).div(BPS)
+                const expected_total_boost_amount_with_slippage = slightly_smaller_amount.mul(BPS - accepted_slippage).div(BPS)
     
                 let i = 0
 
@@ -1500,7 +1507,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
     
                 //Homemade check :
                 //amount with slippage <= effective boost amount <= requested amount
-                expect(effective_total_boost_amount).to.be.lte(amount)
+                expect(effective_total_boost_amount).to.be.lte(slightly_smaller_amount)
                 expect(effective_total_boost_amount).to.be.gte(expected_total_boost_amount_with_slippage)
     
                 const veToken_balance_receiver = await veToken.balanceOf(receiver.address, { blockTag: tx_block })
@@ -1821,7 +1828,7 @@ describe('Warden MultiBuy contract tests - ' + ve_token_name + ' version', () =>
 
                 const other_preSorted_Offers = [7,5,8,1,4,6]
     
-                const slightly_bigger_amount = ethers.utils.parseEther('800')
+                const slightly_bigger_amount = ethers.utils.parseEther('750')
                 const slightly_bigger_fee_amount = slightly_bigger_amount.mul(max_price).mul(one_week.mul(duration)).div(unit)
                 
                 const buy_tx = await multiBuy.connect(receiver).preSortedMultiBuy(

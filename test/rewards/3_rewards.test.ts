@@ -1,5 +1,5 @@
 const hre = require("hardhat");
-import { ethers, waffle } from "hardhat";
+import { ethers, network } from "hardhat";
 import chai from "chai";
 import { solidity } from "ethereum-waffle";
 import { Warden } from "../../typechain/Warden";
@@ -21,20 +21,19 @@ import {
     resetFork,
 } from "../utils/utils";
 
-const {
-    TOKEN_ADDRESS,
-    VOTING_ESCROW_ADDRESS,
-    BOOST_DELEGATION_ADDRESS,
-    BIG_HOLDER,
-    VECRV_LOCKING_TIME,
-    PAL_TOKEN_ADDRESS,
-    PAL_HOLDER
-} = require("../utils/constant");
+let constants_path = "../utils/constants" // by default: veCRV
+
+const VE_TOKEN = process.env.VE_TOKEN ? String(process.env.VE_TOKEN) : "VECRV";
+if (VE_TOKEN === "VEBAL") constants_path = "../utils/balancer-constants"
+
+const { CHAINID, TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VE_LOCKING_TIME, REWARD_TOKEN_ADDRESS, REWARD_HOLDER } = require(constants_path);
 
 
 chai.use(solidity);
 const { expect } = chai;
 const { provider } = ethers;
+
+const chainId = network.config.chainId;
 
 const WEEK = 7 * 86400;
 const unit = ethers.utils.parseEther('1')
@@ -46,10 +45,13 @@ let multiBuyFactory: ContractFactory
 const baseDropPerVote = ethers.utils.parseEther('0.005')
 const minDropPerVote = ethers.utils.parseEther('0.001')
 
-const targetPurchaseAmount = ethers.utils.parseEther('500000')
+const targetPurchaseAmount = ethers.utils.parseEther('5000')
+
+let ve_token_name = "veCRV"
+if (VE_TOKEN === "VEBAL") ve_token_name = "veBAL"
 
 
-describe('Warden rewards tests - part 3', () => {
+describe('Warden rewards tests - part 3 - ' + ve_token_name + ' version', () => {
     
 
     let admin: SignerWithAddress
@@ -68,8 +70,8 @@ describe('Warden rewards tests - part 3', () => {
     let warden: Warden
     let multiBuy: WardenMultiBuy
 
-    let CRV: IERC20
-    let veCRV: IVotingEscrow
+    let feeToken: IERC20
+    let veToken: IVotingEscrow
     let delegationBoost: IVotingEscrowDelegation
 
     let rewardToken: IERC20
@@ -88,7 +90,7 @@ describe('Warden rewards tests - part 3', () => {
     const total_reward_amount = ethers.utils.parseEther('200000');
 
     before(async () => {
-        await resetFork();
+        await resetFork(chainId, VE_TOKEN);
 
         [
             admin,
@@ -108,54 +110,98 @@ describe('Warden rewards tests - part 3', () => {
         wardenFactory = await ethers.getContractFactory("Warden");
         multiBuyFactory = await ethers.getContractFactory("WardenMultiBuy");
 
-        const crv_amount = ethers.utils.parseEther('8000');
+        const fee_token_amount = ethers.utils.parseEther('8000');
         const lock_amount = ethers.utils.parseEther('2000'); //change the lock amounts
 
-        CRV = IERC20__factory.connect(TOKEN_ADDRESS, provider);
+        feeToken = IERC20__factory.connect(TOKEN_ADDRESS[chainId], provider);
 
-        veCRV = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS, provider);
+        veToken = IVotingEscrow__factory.connect(VOTING_ESCROW_ADDRESS[chainId], provider);
 
-        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS, provider);
+        delegationBoost = IVotingEscrowDelegation__factory.connect(BOOST_DELEGATION_ADDRESS[chainId], provider);
 
-        rewardToken = IERC20__factory.connect(PAL_TOKEN_ADDRESS, provider);
+        rewardToken = IERC20__factory.connect(REWARD_TOKEN_ADDRESS[chainId], provider);
 
-        await getERC20(admin, BIG_HOLDER, CRV, admin.address, crv_amount);
+        await getERC20(admin, BIG_HOLDER[chainId], feeToken, admin.address, fee_token_amount);
 
-        await getERC20(admin, PAL_HOLDER, rewardToken, admin.address, ethers.utils.parseEther('25000000'));
+        await getERC20(admin, REWARD_HOLDER[chainId], rewardToken, admin.address, ethers.utils.parseEther('25000000'));
 
-        //split between all delegators
-        await CRV.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
-        await CRV.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
-        await CRV.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
-        await CRV.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
-        await CRV.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
-        await CRV.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
-        await CRV.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
-        await CRV.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
+        if(VE_TOKEN === "VECRV"){
+            //split between all delegators
+            await feeToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await feeToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await feeToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await feeToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await feeToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await feeToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await feeToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await feeToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
 
-        await CRV.connect(delegator1).approve(veCRV.address, ethers.utils.parseEther('200'));
-        await CRV.connect(delegator2).approve(veCRV.address, ethers.utils.parseEther('350'));
-        await CRV.connect(delegator3).approve(veCRV.address, ethers.utils.parseEther('275'));
-        await CRV.connect(delegator4).approve(veCRV.address, ethers.utils.parseEther('250'));
-        await CRV.connect(delegator5).approve(veCRV.address, ethers.utils.parseEther('100'));
-        await CRV.connect(delegator6).approve(veCRV.address, ethers.utils.parseEther('150'));
-        await CRV.connect(delegator7).approve(veCRV.address, ethers.utils.parseEther('500'));
-        await CRV.connect(delegator8).approve(veCRV.address, ethers.utils.parseEther('175'));
+            await feeToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await feeToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await feeToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await feeToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await feeToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await feeToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await feeToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await feeToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
 
-        const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VECRV_LOCKING_TIME
-        const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
 
-        await veCRV.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
-        await veCRV.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
-        await veCRV.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
-        await veCRV.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
-        await veCRV.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
-        await veCRV.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
-        await veCRV.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
-        await veCRV.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
+            await veToken.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
+            await veToken.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
+            await veToken.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
+            await veToken.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
+            await veToken.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
+            await veToken.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
+            await veToken.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
+            await veToken.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
 
-        await CRV.connect(admin).transfer(receiver.address, crv_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
-        await CRV.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+            await feeToken.connect(admin).transfer(receiver.address, fee_token_amount.sub(lock_amount).sub(ethers.utils.parseEther('1000')));
+            await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+        } else if(VE_TOKEN === "VEBAL"){
+            const { BPT_TOKEN_ADDRESS, BPT_TOKEN_HOLDER } = require(constants_path);
+
+            let bptToken: IERC20
+            bptToken = IERC20__factory.connect(BPT_TOKEN_ADDRESS[chainId], provider);
+
+            await getERC20(admin, BPT_TOKEN_HOLDER[chainId], bptToken, admin.address, lock_amount);
+
+            //split between all delegators
+            await bptToken.connect(admin).transfer(delegator1.address, ethers.utils.parseEther('200'));
+            await bptToken.connect(admin).transfer(delegator2.address, ethers.utils.parseEther('350'));
+            await bptToken.connect(admin).transfer(delegator3.address, ethers.utils.parseEther('275'));
+            await bptToken.connect(admin).transfer(delegator4.address, ethers.utils.parseEther('250'));
+            await bptToken.connect(admin).transfer(delegator5.address, ethers.utils.parseEther('100'));
+            await bptToken.connect(admin).transfer(delegator6.address, ethers.utils.parseEther('150'));
+            await bptToken.connect(admin).transfer(delegator7.address, ethers.utils.parseEther('500'));
+            await bptToken.connect(admin).transfer(delegator8.address, ethers.utils.parseEther('175'));
+
+            await bptToken.connect(delegator1).approve(veToken.address, ethers.utils.parseEther('200'));
+            await bptToken.connect(delegator2).approve(veToken.address, ethers.utils.parseEther('350'));
+            await bptToken.connect(delegator3).approve(veToken.address, ethers.utils.parseEther('275'));
+            await bptToken.connect(delegator4).approve(veToken.address, ethers.utils.parseEther('250'));
+            await bptToken.connect(delegator5).approve(veToken.address, ethers.utils.parseEther('100'));
+            await bptToken.connect(delegator6).approve(veToken.address, ethers.utils.parseEther('150'));
+            await bptToken.connect(delegator7).approve(veToken.address, ethers.utils.parseEther('500'));
+            await bptToken.connect(delegator8).approve(veToken.address, ethers.utils.parseEther('175'));
+
+            const lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + VE_LOCKING_TIME
+            const one_week_lock_time = (await ethers.provider.getBlock(ethers.provider.blockNumber)).timestamp + Math.floor((86400 * 7) / (86400 * 7)) * (86400 * 7)
+
+            await veToken.connect(delegator1).create_lock(ethers.utils.parseEther('200'), lock_time);
+            await veToken.connect(delegator2).create_lock(ethers.utils.parseEther('350'), lock_time);
+            await veToken.connect(delegator3).create_lock(ethers.utils.parseEther('275'), lock_time);
+            await veToken.connect(delegator4).create_lock(ethers.utils.parseEther('250'), lock_time);
+            await veToken.connect(delegator5).create_lock(ethers.utils.parseEther('100'), one_week_lock_time);
+            await veToken.connect(delegator6).create_lock(ethers.utils.parseEther('150'), lock_time);
+            await veToken.connect(delegator7).create_lock(ethers.utils.parseEther('500'), lock_time);
+            await veToken.connect(delegator8).create_lock(ethers.utils.parseEther('175'), lock_time);
+
+            await feeToken.connect(admin).transfer(receiver.address, fee_token_amount.sub(ethers.utils.parseEther('1000')));
+            await feeToken.connect(admin).transfer(receiver2.address, ethers.utils.parseEther('1000'));
+
+        }
 
     });
 
@@ -163,8 +209,8 @@ describe('Warden rewards tests - part 3', () => {
     beforeEach(async () => {
 
         warden = (await wardenFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            feeToken.address,
+            veToken.address,
             delegationBoost.address,
             500, //5%
             1000, //10%
@@ -173,8 +219,8 @@ describe('Warden rewards tests - part 3', () => {
         await warden.deployed();
 
         multiBuy = (await multiBuyFactory.connect(admin).deploy(
-            CRV.address,
-            veCRV.address,
+            feeToken.address,
+            veToken.address,
             delegationBoost.address,
             warden.address
         )) as WardenMultiBuy;
@@ -198,7 +244,7 @@ describe('Warden rewards tests - part 3', () => {
         await warden.connect(delegator7).register(price_per_vote7, 10, 0, 2000, 10000, false);
         await warden.connect(delegator8).register(price_per_vote8, 9, 0, 1500, 7500, false);
 
-        await CRV.connect(receiver).approve(multiBuy.address, ethers.constants.MaxUint256)
+        await feeToken.connect(receiver).approve(multiBuy.address, ethers.constants.MaxUint256)
 
         await rewardToken.connect(admin).transfer(warden.address, total_reward_amount)
 
@@ -271,7 +317,7 @@ describe('Warden rewards tests - part 3', () => {
 
                 expect(boost_index.toNumber()).to.be.eq(preSorted_Offers_list[i])
 
-                const delegator_balance = await veCRV.balanceOf(e.delegator, { blockTag: tx_block })
+                const delegator_balance = await veToken.balanceOf(e.delegator, { blockTag: tx_block })
                 const boost_amount = delegator_balance.mul(e.percent).div(10000)
 
                 expect(boost_index.toNumber()).to.be.eq(preSorted_Offers_list[i])
