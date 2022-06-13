@@ -5,7 +5,7 @@ export enum CHAINID {
 }
 
 export const BLOCK_NUMBER = {
-    [CHAINID.ETH_MAINNET]: 14706474
+    [CHAINID.ETH_MAINNET]: 14872300
 };
 
 export const TOKEN_ADDRESS = {
