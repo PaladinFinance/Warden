@@ -68,6 +68,9 @@ library Errors {
     error ReserveTooLow();
     error BaseDropTooLow();
     error MinDropTooHigh();
+    error AlreadyAllowedToken();
+    error NotAllowedToken();
+    error CannotRecoverToken();
 
     // MultiBuy Errors
     error NotEnoughFees();
