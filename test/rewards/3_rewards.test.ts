@@ -1,5 +1,5 @@
 const hre = require("hardhat");
-import { ethers, network  } from "hardhat";
+import { ethers, network } from "hardhat";
 import chai from "chai";
 import { solidity } from "ethereum-waffle";
 import { Warden } from "../../typechain/Warden";
@@ -29,11 +29,11 @@ if (VE_TOKEN === "VEBAL") constants_path = "../utils/balancer-constants"
 const { CHAINID, TOKEN_ADDRESS, VOTING_ESCROW_ADDRESS, BOOST_DELEGATION_ADDRESS, BIG_HOLDER, VE_LOCKING_TIME, REWARD_TOKEN_ADDRESS, REWARD_HOLDER } = require(constants_path);
 
 
-const chainId = network.config.chainId;
-
 chai.use(solidity);
 const { expect } = chai;
 const { provider } = ethers;
+
+const chainId = network.config.chainId;
 
 const WEEK = 7 * 86400;
 const unit = ethers.utils.parseEther('1')
@@ -45,7 +45,7 @@ let multiBuyFactory: ContractFactory
 const baseDropPerVote = ethers.utils.parseEther('0.005')
 const minDropPerVote = ethers.utils.parseEther('0.001')
 
-const targetPurchaseAmount = ethers.utils.parseEther('500000')
+const targetPurchaseAmount = ethers.utils.parseEther('5000')
 
 let ve_token_name = "veCRV"
 if (VE_TOKEN === "VEBAL") ve_token_name = "veBAL"
