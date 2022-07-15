@@ -5,7 +5,7 @@ export enum CHAINID {
 }
 
 export const BLOCK_NUMBER = {
-    [CHAINID.ETH_MAINNET]: 14761350,
+    [CHAINID.ETH_MAINNET]: 14928300,
 };
 
 export const TOKEN_ADDRESS = {
@@ -17,7 +17,7 @@ export const VOTING_ESCROW_ADDRESS = {
 }
 
 export const BOOST_DELEGATION_ADDRESS = {
-    [CHAINID.ETH_MAINNET]: "0x2E96068b3D5B5BAE3D7515da4A1D2E52d08A2647", //here : veBoost for veBAL
+    [CHAINID.ETH_MAINNET]: "0xB496FF44746A8693A060FafD984Da41B253f6790", //here : veBoost for veBAL
 }
 
 export const BIG_HOLDER = {
