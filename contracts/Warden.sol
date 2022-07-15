@@ -327,8 +327,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Registers a new user wanting to sell its delegation
      * @dev Regsiters a new user, creates a BoostOffer with the given parameters
      * @param pricePerVote Price of 1 vote per second (in wei)
+     * @param maxDuration Maximum duration (in weeks) that a Boost can last when taken from this Offer
+     * @param expiryTime Timestamp when this Offer is not longer valid
      * @param minPerc Minimum percent of users voting token balance to buy for a Boost (in BPS)
      * @param maxPerc Maximum percent of users total voting token balance available to delegate (in BPS)
+     * @param useAdvicePrice True to use the advice Price instead of the given pricePerVote
      */
     function register(
         uint256 pricePerVote,
@@ -364,8 +367,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
      * @notice Updates an user BoostOffer parameters
      * @dev Updates parameters for the user's BoostOffer
      * @param pricePerVote Price of 1 vote per second (in wei)
+     * @param maxDuration Maximum duration (in weeks) that a Boost can last when taken from this Offer
+     * @param expiryTime Timestamp when this Offer is not longer valid
      * @param minPerc Minimum percent of users voting token balance to buy for a Boost (in BPS)
      * @param maxPerc Maximum percent of users total voting token balance available to delegate (in BPS)
+     * @param useAdvicePrice True to use the advice Price instead of the given pricePerVote
      */
     function updateOffer(
         uint256 pricePerVote,
@@ -1096,6 +1102,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     // Manager methods:
 
+    /**
+     * @notice Updates the advised price
+     * @param newPrice New price perv ote per second (in wei)
+     */
     function setAdvisedPrice(uint256 newPrice) external {
         if(!approvedManagers[msg.sender]) revert Errors.CallerNotManager();
         if(newPrice == 0) revert Errors.NullValue();
@@ -1106,6 +1116,13 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
 
     // Admin Functions :
 
+    /**
+     * @notice Set the start parameters for reward distribution, and start accruint rewards to boost purchases
+     * @param _rewardToken Address of the token to use as rewards
+     * @param _baseWeeklyDropPerVote Base amount of weekly rewards to be distributed for the week (in wei)
+     * @param _minWeeklyDropPerVote Minimum amount of reward to be distributed for the week (in wei)
+     * @param _targetPurchaseAmount Target amount of veCRV in Boost to be purchased weekly (in wei)
+     */
     function startRewardDistribution(
         address _rewardToken,
         uint256 _baseWeeklyDropPerVote,
@@ -1132,18 +1149,30 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         periodDropPerVote[startPeriod] = baseWeeklyDropPerVote;
     }
 
+    /**
+     * @notice Updates the base amount of weekly rewards to be distributed for the week
+     * @param newBaseWeeklyDropPerVote New base amount (in wei)
+     */
     function setBaseWeeklyDropPerVote(uint256 newBaseWeeklyDropPerVote) external onlyOwner {
         if(newBaseWeeklyDropPerVote == 0) revert Errors.NullValue();
         if(newBaseWeeklyDropPerVote < minWeeklyDropPerVote) revert Errors.BaseDropTooLow();
         baseWeeklyDropPerVote = newBaseWeeklyDropPerVote;
     }
 
+    /**
+     * @notice Updates the minimum amount of weekly rewards to be distributed for the week
+     * @param newMinWeeklyDropPerVote New min amount (in wei)
+     */
     function setMinWeeklyDropPerVote(uint256 newMinWeeklyDropPerVote) external onlyOwner {
         if(newMinWeeklyDropPerVote == 0) revert Errors.NullValue();
         if(baseWeeklyDropPerVote < newMinWeeklyDropPerVote) revert Errors.MinDropTooHigh();
         minWeeklyDropPerVote = newMinWeeklyDropPerVote;
     }
 
+    /**
+     * @notice Updates the target amount of veCRV to be purchased weekly through Boosts
+     * @param newTargetPurchaseAmount New target amount (in wei)
+     */
     function setTargetPurchaseAmount(uint256 newTargetPurchaseAmount) external onlyOwner {
         if(newTargetPurchaseAmount == 0) revert Errors.NullValue();
         targetPurchaseAmount = newTargetPurchaseAmount;
@@ -1254,6 +1283,11 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * @notice Deposit fee token in the reserve
+     * @param from Address to pull the tokens from
+     * @param amount Amount of token to deposit
+     */
     function depositToReserve(address from, uint256 amount) external onlyAllowed returns(bool) {
         reserveAmount = reserveAmount + amount;
         feeToken.safeTransferFrom(from, address(this), amount);
@@ -1261,6 +1295,10 @@ contract Warden is Ownable, Pausable, ReentrancyGuard {
         return true;
     }
 
+    /**
+     * @notice Withdraw fee tokens from the reserve to send to the Reserve Manager
+     * @param amount Amount of token to withdraw
+     */
     function withdrawFromReserve(uint256 amount) external onlyAllowed returns(bool) {
         if(amount > reserveAmount) revert Errors.ReserveTooLow();
         reserveAmount = reserveAmount - amount;
