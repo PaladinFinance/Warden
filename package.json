@@ -11,7 +11,8 @@
     "tenderly-fork": "npx hardhat run --network tenderly scripts/tenderly_scripts/tenderly_create_fork.ts",
     "tenderly-balance": "npx hardhat run --network tenderly scripts/tenderly_scripts/tenderly_balance.ts",
     "tenderly-deploy": "npx hardhat run --network tenderly scripts/deploy/deploy_tenderly.ts",
-    "deploy": "npx hardhat run --network mainnet"
+    "deploy": "npx hardhat run --network mainnet",
+    "test-vebal": "VE_TOKEN=VEBAL npx hardhat test"
   },
   "author": "",
   "license": "MIT",

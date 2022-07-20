@@ -1,6 +1,8 @@
 const hre = require("hardhat");
 import { BigNumber, Contract } from "ethers";
 import { SignerWithAddress } from "@nomiclabs/hardhat-ethers/signers";
+import { BLOCK_NUMBER } from "./constants";
+import { TEST_URI } from "./network";
 
 const { provider } = ethers;
 
@@ -24,16 +26,28 @@ export async function setBlockTimestamp(
     await hre.network.provider.send("evm_mine")
 }
 
-export async function resetFork() {
+export async function resetFork(chainId: number, veToken: string) {
+    let constants_path = "./constants"
+
+    if(veToken != "VECRV"){
+        if(veToken === "VEBAL") {
+            constants_path = "./balancer-constants"
+        }
+    }
+
+    const { BLOCK_NUMBER } = require(constants_path);
+    let blockNumber = BLOCK_NUMBER[chainId]
+
     await hre.network.provider.request({
         method: "hardhat_reset",
         params: [
-          {
-            forking: {
-                jsonRpcUrl: "https://eth-mainnet.alchemyapi.io/v2/" + (process.env.ALCHEMY_API_KEY || ''),
-                blockNumber: 14872300
+            {
+                chainId: chainId,
+                forking: {
+                    jsonRpcUrl: TEST_URI[chainId],
+                    blockNumber: blockNumber
+                }
             },
-          },
         ],
     });
 

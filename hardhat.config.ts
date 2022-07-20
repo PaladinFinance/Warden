@@ -7,8 +7,13 @@ import "@nomiclabs/hardhat-etherscan";
 import "solidity-coverage";
 import "hardhat-gas-reporter";
 import '@tenderly/hardhat-tenderly';
+import { BLOCK_NUMBER } from "./test/utils/constants";
+import { TEST_URI } from "./test/utils/network";
 
 require("dotenv").config();
+
+// Defaults to CHAINID=1 so things will run with mainnet fork if not specified
+const CHAINID = process.env.CHAINID ? Number(process.env.CHAINID) : 1;
 
 
 const config: HardhatUserConfig = {
@@ -33,9 +38,10 @@ const config: HardhatUserConfig = {
   },
   networks: {
     hardhat: {
+      chainId: CHAINID,
       forking: {
-        url: "https://eth-mainnet.alchemyapi.io/v2/" + (process.env.ALCHEMY_API_KEY || ''),
-        blockNumber: 14872300
+        url: TEST_URI[CHAINID],
+        blockNumber: BLOCK_NUMBER[CHAINID]
       }
     },
     mainnet: {
